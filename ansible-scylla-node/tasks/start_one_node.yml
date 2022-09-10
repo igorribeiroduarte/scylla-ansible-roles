@@ -1,10 +1,109 @@
 ---
+- name: Check if current node is already bootstrapped
+  shell: |
+    nodetool status | grep -o {{ item }}
+  ignore_errors: true
+  delegate_to: "{{ scylla_seeds[0] }}"
+  register: _bootstrapped
+  when: replication_aware_token_distributor is defined
+
+- name: Replication aware token distributor tasks
+  block:
+    - name: Get current token ring
+      block:
+        - name: Get tokens
+          shell: |
+            for ip in `nodetool status | grep -Eo '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'`; do
+                echo "$ip=`curl -s -X GET http://localhost:10000/storage_service/tokens/$ip | cut -d '[' -f2 | cut -d ']' -f1 | tr -d \\" | tr -d \ `"
+            done
+          register: _current_tokens
+          delegate_to: "{{ scylla_seeds[0] }}"
+
+        - name: Set tokens as a fact
+          set_fact:
+            current_tokens: "{{ _current_tokens }}"
+
+    - name: Copy current tokens to /tmp
+      copy:
+        content: "{{ current_tokens.stdout }}"
+        dest: "/tmp/current_tokens"
+
+    - name: copy_inventory
+      copy:
+        src: "{{ inventory_file }}"
+        dest: /tmp/inventory.ini
+
+    - name: Load ssh key to be able to clone field engineering repo
+      shell: |
+        ssh-add "{{ replication_aware_token_distributor.fe_access_key_path }}"
+      become: false
+      delegate_to: localhost
+
+    - name: Add github to known hosts
+      shell: |
+        ssh-keyscan -t rsa github.com >> ~/.ssh/known_hosts
+
+    - name: Clone field-engineering repo
+      git:
+        #FIXME: Change this to upstream after merging the branch with the adjustments
+        repo: git@github.com:igorribeiroduarte/field-engineering.git
+        version: rep_aware_distributor_small_adjusts
+        dest: /tmp/fe
+      become: false
+
+    - name: Install replication_aware_token_distributor dependencies
+      vars:
+        ansible_python_interpreter: python3
+      pip:
+        name: sortedcontainers
+        executable: pip3
+
+    - name: Calculate tokens for the current node
+      environment:
+        PYTHONPATH: /tmp/fe/scylla-scripts/cloud-access-wrappers
+      command: /tmp/fe/scylla-scripts/token-ring/replication_aware_token_distributor/replication_aware_token_distributor.py --tokens-file=/tmp/current_tokens --inventory=/tmp/inventory.ini --num-tokens={{ replication_aware_token_distributor.num_tokens }} --rf={{ replication_aware_token_distributor.rf }} --rack={{ hostvars[item]['rack'] }} --print-vnodes
+      become: false
+      register: _new_tokens
+
+    - name: Remove field engineering repo
+      file:
+        state: absent
+        path: /tmp/fe
+
+    - name: remove current_tokens file
+      file:
+        state: absent
+        path: /tmp/current_tokens
+
+    - name: remove inventory.ini
+      file:
+        state: absent
+        path: /tmp/inventory.ini
+
+    - name: Set initial_token in scylla.yaml
+      lineinfile:
+        path: /etc/scylla/scylla.yaml
+        regexp: '^(#\s*)?initial_token:'
+        line: "initial_token: {{ _new_tokens.stdout }}"
+        create: yes
+      become: true
+  delegate_to: "{{ item }}"
+  when: replication_aware_token_distributor is defined and _bootstrapped is defined and _bootstrapped.stdout != item and (one_per_rack is not defined or one_per_rack|bool == false)
+
+- name: Check the racks already utilized
+  shell: |
+    nodetool status | grep -E '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}' | awk '{print $8;}'
+  ignore_errors: true
+  delegate_to: "{{ scylla_seeds[0] }}"
+  register: _utilized_racks
+
 - name: start scylla on {{ item }}
   service:
     name: scylla-server
     state: started
   become: true
   delegate_to: "{{ item }}"
+  when: one_per_rack is not defined or one_per_rack|bool == false or hostvars[item]['rack'] not in _utilized_racks.stdout
 
 # Wait for at most 2 hours for a node to start - bootstrapping and the corresponding streaming can take quite long
 - name: Wait for CQL port on {{ hostvars[item]['listen_address'] }}
@@ -13,3 +112,13 @@
     host: "{{ hostvars[item]['listen_address'] }}"
     timeout: 7200
   delegate_to: "{{ item }}"
+  when: one_per_rack is not defined or one_per_rack|bool == false or hostvars[item]['rack'] not in _utilized_racks.stdout
+
+- name: Delete initial_token in scylla.yaml
+  lineinfile:
+    path: /etc/scylla/scylla.yaml
+    regexp: '^initial_token:'
+    line: ""
+  become: true
+  delegate_to: "{{ item }}"
+  when: replication_aware_token_distributor is defined

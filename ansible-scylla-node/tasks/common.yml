@@ -1,5 +1,4 @@
 ---
-
 - name: Deactivate firewall
   block:
     - name: Deactivate front-end firewall services
@@ -244,6 +243,17 @@
         host: "{{ listen_address }}"
       when: broadcast_address in scylla_seeds or inventory_hostname in scylla_seeds
 
+    - name: Start at least one node from each rack serially
+      run_once: true
+      include_tasks: start_one_node.yml
+      vars:
+        one_per_rack: true
+      loop: "{{ groups['scylla'] }}"
+      when:
+        - replication_aware_token_distributor is defined
+        - item not in scylla_seeds
+        - hostvars[item]['broadcast_address'] not in scylla_seeds
+
     - name: Start scylla non-seeds nodes serially
       run_once: true
       include_tasks: start_one_node.yml
@@ -295,4 +305,3 @@
   loop: "{{ sysctl }}"
   ignore_errors: true
   when: update_sysctl|bool is defined and update_sysctl|bool
-
