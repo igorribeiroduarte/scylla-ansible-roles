@@ -1,5 +1,4 @@
 ---
-
 - name: Deactivate firewall
   block:
     - name: Deactivate front-end firewall services
@@ -215,67 +214,22 @@
     - (scylla_ssl.internode.enabled|bool) or
       (scylla_ssl.client.enabled|bool)
 
-- name: start_scylla_service dependent tasks
-  block:
-    # scylla_listen_address is a composite indirect value that depends on another per-host value - scylla_nic.
-    # Therefore in order to be able to get the corresponding value via hostvars[item] later in the play we need to
-    # have an actual value resolved.
-    # One way to do that is to resolve it and store as an Ansible fact.
-    - name: Resolve a scylla_listen_address as a fact
-      set_fact:
-        listen_address: "{{ scylla_listen_address }}"
+# scylla_listen_address is a composite indirect value that depends on another per-host value - scylla_nic.
+# Therefore in order to be able to get the corresponding value via hostvars[item] later in the play we need to
+# have an actual value resolved.
+# One way to do that is to resolve it and store as an Ansible fact.
+- name: Resolve a scylla_listen_address as a fact
+  set_fact:
+    listen_address: "{{ scylla_listen_address }}"
 
-    # The same relates to the below
-    - name: Resolve scylla_broadcast_address
-      set_fact:
-        broadcast_address: "{{ scylla_broadcast_address }}"
+# The same relates to the below
+- name: Resolve scylla_broadcast_address
+  set_fact:
+    broadcast_address: "{{ scylla_broadcast_address }}"
 
-    # Start all seeders together since we don't know which one is the "first" - so let them figure it by themselves
-    - name: start scylla on seeders
-      service:
-        name: scylla-server
-        state: started
-      become: true
-      when: broadcast_address in scylla_seeds or inventory_hostname in scylla_seeds
-
-    - name: Wait for CQL port on seeders
-      wait_for:
-        port: 9042
-        host: "{{ listen_address }}"
-      when: broadcast_address in scylla_seeds or inventory_hostname in scylla_seeds
-
-    - name: Start scylla non-seeds nodes serially
-      run_once: true
-      include_tasks: start_one_node.yml
-      loop: "{{ groups['scylla'] }}"
-      when:
-        - item not in scylla_seeds
-        - hostvars[item]['broadcast_address'] not in scylla_seeds
-
-    - name: wait for the API port to come up on all nodes
-      wait_for:
-        port: "{{ scylla_api_port }}"
-        host: "{{ scylla_api_address }}"
-        timeout: 300
-
-    - name: wait for the cluster to become healthy
-      shell: |
-        nodetool status|grep -E '^UN|^UJ|^DN'|wc -l
-      register: node_count
-      until: node_count.stdout|int == ansible_play_batch|length
-      retries: 300
-      delay: 1
-      when: full_inventory|bool
-
-    - name: check API access
-      uri:
-        url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/failure_detector/endpoints/"
-        follow_redirects: none
-        method: GET
-      register: _result
-      until: _result.status == 200
-      retries: 90
-      delay: 1
+- name: Bootstrap nodes
+  run_once: true
+  include_tasks: bootstrapping.yml
   when: start_scylla_service is defined and start_scylla_service|bool
 
 - name: generate monitoring configuration

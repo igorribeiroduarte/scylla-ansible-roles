@@ -1,0 +1,84 @@
+---
+- name: Find the first node which is already bootstrapped, if any
+  wait_for:
+    port: 9042
+    host: "{{ hostvars[item]['listen_address'] }}"
+    timeout: 5
+  register: wait_for_cql_port_output
+  ignore_errors: true
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['scylla'] }}"
+  when: wait_for_cql_port_output is not defined or wait_for_cql_port_output.failed == True
+
+- name: Set one of the already bootstrapped nodes as the new seed
+  set_fact:
+    new_seed_node: "{{ item.item }}"
+  loop: "{{ wait_for_cql_port_output.results }}"
+  when: new_seed_node is not defined and item.failed == False
+
+- name: Set the first node of the inventory as the new seed
+  set_fact:
+    new_seed_node: "{{ groups['scylla'][0] }}"
+  when: new_seed_node is not defined
+
+- name: Set {{ new_seed_node }} as seed in scylla.yaml
+  become: true
+  lineinfile:
+    path: /etc/scylla/scylla.yaml
+    regexp: '^(\s+) - seeds:'
+    line: |
+      \g<1> - seeds: {{ hostvars[new_seed_node]['broadcast_address'] }}
+    backrefs: yes
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['scylla'] }}"
+
+- name: Start the new seed node
+  loop: "{{ groups['scylla'] }}"
+  include_tasks: start_one_node.yml
+  when: item == new_seed_node
+
+- name: Bootstrap non-seed nodes
+  run_once: true
+  include_tasks: start_one_node.yml
+  loop: "{{ groups['scylla'] }}"
+  when:
+    - item != new_seed_node
+    - hostvars[item]['broadcast_address'] != new_seed_node
+
+- name: Restore seeds list
+  become: true
+  lineinfile:
+    path: /etc/scylla/scylla.yaml
+    regexp: '^(\s+) - seeds:'
+    line: |
+      \g<1> - seeds: {{ scylla_seeds | join(',') }}
+    backrefs: yes
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['scylla'] }}"
+
+- name: wait for the API port to come up on all nodes
+  wait_for:
+    port: "{{ hostvars[item]['scylla_api_port'] }}"
+    host: "{{ hostvars[item]['scylla_api_address'] }}"
+    timeout: 300
+  loop: "{{ groups['scylla'] }}"
+
+- name: wait for the cluster to become healthy
+  shell: |
+    nodetool status|grep -E '^UN|^UJ|^DN'|wc -l
+  register: node_count
+  until: node_count.stdout|int == ansible_play_batch|length
+  retries: 300
+  delay: 1
+  when: full_inventory|bool
+
+- name: check API access
+  uri:
+    url: "http://{{ hostvars[item]['scylla_api_address'] }}:{{ hostvars[item]['scylla_api_port'] }}/failure_detector/endpoints/"
+    follow_redirects: none
+    method: GET
+  register: _result
+  until: _result.status == 200
+  retries: 90
+  delay: 1
+  loop: "{{ groups['scylla'] }}"
