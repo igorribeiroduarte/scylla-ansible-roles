@@ -1,298 +1,380 @@
 ---
 
-- name: Deactivate firewall
-  block:
-    - name: Deactivate front-end firewall services
-      service:
-        name: "{{ item }}"
-        state: stopped
-        enabled: false
-      loop:
-        - firewalld.service
-        - iptables_services.service
-        - ufw.service
-      when: ansible_facts.services[item] is defined
-    - name: Flush all iptables rules
-      iptables:
-        flush: yes
-      when: "'iptables' in ansible_facts.packages"
-  when: not firewall_enabled
-  become: true
+#- name: Deactivate firewall
+#  block:
+#    - name: Deactivate front-end firewall services
+#      service:
+#        name: "{{ item }}"
+#        state: stopped
+#        enabled: false
+#      loop:
+#        - firewalld.service
+#        - iptables_services.service
+#        - ufw.service
+#      when: ansible_facts.services[item] is defined
+#    - name: Flush all iptables rules
+#      iptables:
+#        flush: yes
+#      when: "'iptables' in ansible_facts.packages"
+#  when: not firewall_enabled
+#  become: true
+#
+#- name: configure RAID via Scylla-setup
+#  block:
+#    - name: check for current raid
+#      shell: |
+#        C=$(cat /proc/mdstat |grep md0| wc -w)
+#        echo $((0 + C - 4))
+#      register: present_raid_disks
+#
+#    - name: run raid setup
+#      shell: |
+#        scylla_raid_setup --disks "{{ scylla_raid_setup | join(',') }}" --update-fstab
+#      become: true
+#      when: scylla_raid_setup is defined and scylla_raid_setup|length > 0 and scylla_raid_setup|length != present_raid_disks.stdout|int
+#      ignore_errors: true
+#
+#- name: IO settings probe
+#  block:
+#    - name: check for existing io_properties
+#      stat:
+#        path: /etc/scylla.d/io_properties.yaml
+#      register: io_prop_stat
+#
+#    - name: Measure IO settings on one node
+#      shell: |
+#        scylla_io_setup
+#      when: io_prop_stat.stat.exists|bool == False
+#
+#    - name: store /etc/scylla.d/io_properties.yaml
+#      shell: |
+#        cat /etc/scylla.d/io_properties.yaml
+#      register: _io_properties
+#
+#    - set_fact:
+#        io_properties: "{{ _io_properties.stdout }}"
+#
+#    - name: store /etc/scylla.d/io.conf
+#      shell: |
+#        cat /etc/scylla.d/io.conf
+#      register: _io_conf
+#
+#    - set_fact:
+#        io_conf: "{{ _io_conf.stdout_lines[0] }}"
+#  when: scylla_io_probe|bool == True
+#  run_once: true
+#  become: true
+#
+#- name: Set io.conf
+#  lineinfile:
+#    path: /etc/scylla.d/io.conf
+#    regexp: '^SEASTAR_IO='
+#    line: "{{ io_conf }}"
+#    create: yes
+#  become: true
+#  when: io_conf is defined
+#
+#- name: Set io_properties
+#  template:
+#    src: templates/io_properties.yaml.j2
+#    dest: /etc/scylla.d/io_properties.yaml
+#    owner: root
+#    group: root
+#    mode: '0644'
+#  become: true
+#
+#- name: configure NTP
+#  shell: |
+#    scylla_ntp_setup
+#  become: true
+#  when: skip_ntp is defined and skip_ntp|bool == false
+#
+#- name: node exporter setup
+#  shell: |
+#    node_exporter_install --force
+#  when: install_type == 'online'
+#  become: true
+#  notify:
+#    - node_exporter start
+#  ignore_errors: true
+#  #TODO: stop ignoring errors when the node_exporter_install script fix is available in all actual versions
+#
+#- name: configure Scylla
+#  shell: |
+#    scylla_setup --no-raid-setup --nic {{ scylla_nic }} --setup-nic-and-disks --no-ec2-check --no-kernel-check --no-ntp-setup --no-io-setup --no-node-exporter --no-coredump-setup --no-sysconfig-setup
+#  become: true
+#  when: ansible_facts.services["scylla-server.service"] is defined and ansible_facts.services["scylla-server.service"]["state"] != "running"
+#
+#- name: configure scylla.yaml
+#  template:
+#    src: templates/scylla.yaml.j2
+#    dest: /etc/scylla/scylla.yaml
+#    owner: root
+#    group: root
+#    mode: '0644'
+#  become: true
+#
+#- name: configure cassandra-rackdc.properties
+#  template:
+#    src: templates/cassandra-rackdc.properties.j2
+#    dest: /etc/scylla/cassandra-rackdc.properties
+#    owner: root
+#    group: root
+#    mode: '0644'
+#  become: true
+#  when: scylla_snitch != 'SimpleSnitch' and scylla_snitch != 'RackInferringSnitch'
+#
+#- name: finalize Scylla node configuration
+#  block:
+#  - name: run bootparam setup
+#    shell: |
+#      scylla_bootparam_setup
+#
+#  - name: set up coredump
+#    shell: |
+#      scylla_coredump_setup --dump-to-raiddir
+#    when: skip_coredump is defined and skip_coredump|bool == false
+#
+#  - name: configure cpu scaling
+#    shell: |
+#      scylla_cpuscaling_setup
+#
+#  - name: configure fstrim
+#    shell: |
+#      scylla_fstrim_setup
+#
+#  - name: configure sysconfig
+#    shell: |
+#      scylla_sysconfig_setup --setup-nic-and-disks --nic {{ scylla_nic }}
+#    when: skip_sysconfig is defined and skip_sysconfig|bool == false
+#  become: true
+#
+#- name: perftune related operations
+#  block:
+#  #TODO: additional testing on Debian/Ubuntu required.
+#  - name: set perf_mode for 4 cores or less
+#    set_fact:
+#      perf_mode: mq
+#    when: ansible_processor_vcpus <= 4
+#
+#  - name: set perf_mode for 5 to 8 cores
+#    set_fact:
+#      perf_mode: "sq"
+#    when: ansible_processor_vcpus > 4 and ansible_processor_vcpus <= 8
+#
+#  - name: set perf_mode for 9+ cores
+#    set_fact:
+#      perf_mode: "sq_split"
+#    when: ansible_processor_vcpus > 8
+#
+#  - name: find perftune in the system
+#    shell: |
+#      if [ -f /usr/lib/scylla/perftune.py ]; then echo non-reloc; fi
+#      if [ -f /opt/scylladb/scripts/perftune.py ]; then echo reloc; fi
+#    register: is_reloc
+#
+#  - name: upload hex2list.py to /tmp
+#    copy:
+#      src: files/hex2list.py
+#      dest: /tmp/hex2list.py
+#      mode: '755'
+#
+#  - name: set perftune command for reloc
+#    set_fact:
+#      perftune: "PATH=$PATH:/opt/scylladb/bin /opt/scylladb/scripts/perftune.py --tune net --get-cpu-mask --nic {{ scylla_nic }} --mode {{ perf_mode }} | /tmp/hex2list.py"
+#    when: is_reloc.stdout == 'reloc'
+#
+#  - name: set perftune command for non-reloc
+#    set_fact:
+#      perftune: "/usr/lib/scylla/perftune.py --tune net --get-cpu-mask --nic {{ scylla_nic }} --mode {{ perf_mode }} | /tmp/hex2list.py"
+#    when: is_reloc.stdout == 'non-reloc'
+#
+#  - name: set cpuset command
+#    set_fact:
+#      cpuset: "scylla_cpuset_setup --cpuset `{{ perftune }}`"
+#
+#  - name: run cpuset
+#    shell: |
+#      {{ cpuset }}
+#    become: true
+#    when: skip_cpuset is defined and skip_cpuset|bool == false
+#
+#- name: configure custom scylla.yaml paramaters
+#  lineinfile:
+#    path: /etc/scylla/scylla.yaml
+#    regexp: '^{{ item.key }}'
+#    line: "{{ item.key }}: {{ item.value }}"
+#    create: yes
+#  become: true
+#  loop: "{{ lookup('dict', scylla_yaml_params) }}"
+#
+#- name: enable ssl options
+#  include_tasks: ssl.yml
+#  when:
+#    - scylla_ssl is defined
+#    - (scylla_ssl.internode.enabled|bool) or
+#      (scylla_ssl.client.enabled|bool)
 
-- name: configure RAID via Scylla-setup
-  block:
-    - name: check for current raid
-      shell: |
-        C=$(cat /proc/mdstat |grep md0| wc -w)
-        echo $((0 + C - 4))
-      register: present_raid_disks
+# scylla_listen_address is a composite indirect value that depends on another per-host value - scylla_nic.
+# Therefore in order to be able to get the corresponding value via hostvars[item] later in the play we need to
+# have an actual value resolved.
+# One way to do that is to resolve it and store as an Ansible fact.
+- name: Resolve a scylla_listen_address as a fact
+  set_fact:
+    listen_address: "{{ scylla_listen_address }}"
 
-    - name: run raid setup
-      shell: |
-        scylla_raid_setup --disks "{{ scylla_raid_setup | join(',') }}" --update-fstab
-      become: true
-      when: scylla_raid_setup is defined and scylla_raid_setup|length > 0 and scylla_raid_setup|length != present_raid_disks.stdout|int
-      ignore_errors: true
+# The same relates to the below
+- name: Resolve scylla_broadcast_address
+  set_fact:
+    broadcast_address: "{{ scylla_broadcast_address }}"
 
-- name: IO settings probe
-  block:
-    - name: check for existing io_properties
-      stat:
-        path: /etc/scylla.d/io_properties.yaml
-      register: io_prop_stat
-
-    - name: Measure IO settings on one node
-      shell: |
-        scylla_io_setup
-      when: io_prop_stat.stat.exists|bool == False
-
-    - name: store /etc/scylla.d/io_properties.yaml
-      shell: |
-        cat /etc/scylla.d/io_properties.yaml
-      register: _io_properties
-
-    - set_fact:
-        io_properties: "{{ _io_properties.stdout }}"
-
-    - name: store /etc/scylla.d/io.conf
-      shell: |
-        cat /etc/scylla.d/io.conf
-      register: _io_conf
-
-    - set_fact:
-        io_conf: "{{ _io_conf.stdout_lines[0] }}"
-  when: scylla_io_probe|bool == True
+- name: Find the first node which is already bootstrapped, if any
   run_once: true
-  become: true
-
-- name: Set io.conf
-  lineinfile:
-    path: /etc/scylla.d/io.conf
-    regexp: '^SEASTAR_IO='
-    line: "{{ io_conf }}"
-    create: yes
-  become: true
-  when: io_conf is defined
-
-- name: Set io_properties
-  template:
-    src: templates/io_properties.yaml.j2
-    dest: /etc/scylla.d/io_properties.yaml
-    owner: root
-    group: root
-    mode: '0644'
-  become: true
-
-- name: configure NTP
-  shell: |
-    scylla_ntp_setup
-  become: true
-  when: skip_ntp is defined and skip_ntp|bool == false
-
-- name: node exporter setup
-  shell: |
-    node_exporter_install --force
-  when: install_type == 'online'
-  become: true
-  notify:
-    - node_exporter start
+  wait_for:
+    port: 9042
+    host: "{{ hostvars[item]['listen_address'] }}"
+    timeout: 5
+  register: wait_for_cql_port_output
   ignore_errors: true
-  #TODO: stop ignoring errors when the node_exporter_install script fix is available in all actual versions
+  delegate_to: "{{ item }}"
+  loop: "{{ groups['scylla'] }}"
+  when: wait_for_cql_port_output is not defined or wait_for_cql_port_output.failed == True
 
-- name: configure Scylla
-  shell: |
-    scylla_setup --no-raid-setup --nic {{ scylla_nic }} --setup-nic-and-disks --no-ec2-check --no-kernel-check --no-ntp-setup --no-io-setup --no-node-exporter --no-coredump-setup --no-sysconfig-setup
-  become: true
-  when: ansible_facts.services["scylla-server.service"] is defined and ansible_facts.services["scylla-server.service"]["state"] != "running"
+- name: Set the already bootstrapped node as a fact, if any
+  set_fact:
+    bootstrapped_node: "{{ item.item }}"
+  loop: "{{ wait_for_cql_port_output.results }}"
+  when: bootstrapped_node is not defined and item.failed == False
 
-- name: configure scylla.yaml
-  template:
-    src: templates/scylla.yaml.j2
-    dest: /etc/scylla/scylla.yaml
-    owner: root
-    group: root
-    mode: '0644'
-  become: true
-
-- name: configure cassandra-rackdc.properties
-  template:
-    src: templates/cassandra-rackdc.properties.j2
-    dest: /etc/scylla/cassandra-rackdc.properties
-    owner: root
-    group: root
-    mode: '0644'
-  become: true
-  when: scylla_snitch != 'SimpleSnitch' and scylla_snitch != 'RackInferringSnitch'
-
-- name: finalize Scylla node configuration
+- name: Validate that all nodes are in UN state and save token lists
+  run_once: true
   block:
-  - name: run bootparam setup
-    shell: |
-      scylla_bootparam_setup
+    - shell: |
+        nodetool ring | grep -E '[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'
+      register: _nodetool_ring_output
+    - set_fact:
+        token_list: "{{ token_list | default({}) | combine( { item.split()[0]: (token_list | default({}))[item.split()[0]] | default([]) + [item.split()[7]] } ) }}"
+      failed_when: item.split()[2] != 'Up' or item.split()[3] != 'Normal'
+      loop: "{{ _nodetool_ring_output.stdout_lines }}"
+  delegate_to: "{{ bootstrapped_node }}"
+  when: bootstrapped_node is defined
 
-  - name: set up coredump
-    shell: |
-      scylla_coredump_setup --dump-to-raiddir
-    when: skip_coredump is defined and skip_coredump|bool == false
+- name: Prepare arguments
+  run_once: true
+  set_fact:
+    node_list: "{{ node_list | default([]) + [item] }}"
+    rack_list: "{{ rack_list | default([]) + [hostvars[item]['rack']] }}"
+    dc_list: "{{ dc_list | default([]) + [hostvars[item]['dc']] }}"
+  loop: "{{ groups['scylla'] }}"
 
-  - name: configure cpu scaling
-    shell: |
-      scylla_cpuscaling_setup
+- name: Print node list
+  debug:
+    msg: "--node={{ node_list | join(',') }} --rack={{ rack_list | join(',') }} --dc={{ dc_list | join(',') }}"
 
-  - name: configure fstrim
-    shell: |
-      scylla_fstrim_setup
+- name: Prepare token list
+  run_once: true
+  set_fact:
+    token_list_str: "{{ token_list.keys() | zip(token_list.values()) | map('join', '=') | join('\n') | replace('[','') | replace(']','') | replace(\"'\", '') | replace(' ', '') }}"
 
-  - name: configure sysconfig
-    shell: |
-      scylla_sysconfig_setup --setup-nic-and-disks --nic {{ scylla_nic }}
-    when: skip_sysconfig is defined and skip_sysconfig|bool == false
-  become: true
+- name: Run script
+  run_once: true
+  delegate_to: localhost
+  become: falsetokens_per_node | default
+  environment:
+    PYTHONPATH: "{{ token_distributor.field_cloud_access_path }}:{{ token_distributor.ideal_token_ring_path }}:{{ token_distributor.path }}"
+  shell: "/var/lib/igor_tmp/field-engineering/scylla-scripts/token-ring/token_distributor/token_distributor.py --node={{ node_list | join(',') }} --rack={{ rack_list | join(',') }} --dc={{ dc_list | join(',') }} --rf={{ token_distributor.rf }} --num-tokens={{ token_distributor.num_tokens }} --get-current-tokens"
+  args:
+    stdin: "{{ token_list_str }}"
+  register: _new_tokens
 
-- name: perftune related operations
-  block:
-  #TODO: additional testing on Debian/Ubuntu required.
-  - name: set perf_mode for 4 cores or less
-    set_fact:
-      perf_mode: mq
-    when: ansible_processor_vcpus <= 4
-
-  - name: set perf_mode for 5 to 8 cores
-    set_fact:
-      perf_mode: "sq"
-    when: ansible_processor_vcpus > 4 and ansible_processor_vcpus <= 8
-
-  - name: set perf_mode for 9+ cores
-    set_fact:
-      perf_mode: "sq_split"
-    when: ansible_processor_vcpus > 8
-
-  - name: find perftune in the system
-    shell: |
-      if [ -f /usr/lib/scylla/perftune.py ]; then echo non-reloc; fi
-      if [ -f /opt/scylladb/scripts/perftune.py ]; then echo reloc; fi
-    register: is_reloc
-
-  - name: upload hex2list.py to /tmp
-    copy:
-      src: files/hex2list.py
-      dest: /tmp/hex2list.py
-      mode: '755'
-
-  - name: set perftune command for reloc
-    set_fact:
-      perftune: "PATH=$PATH:/opt/scylladb/bin /opt/scylladb/scripts/perftune.py --tune net --get-cpu-mask --nic {{ scylla_nic }} --mode {{ perf_mode }} | /tmp/hex2list.py"
-    when: is_reloc.stdout == 'reloc'
-
-  - name: set perftune command for non-reloc
-    set_fact:
-      perftune: "/usr/lib/scylla/perftune.py --tune net --get-cpu-mask --nic {{ scylla_nic }} --mode {{ perf_mode }} | /tmp/hex2list.py"
-    when: is_reloc.stdout == 'non-reloc'
-
-  - name: set cpuset command
-    set_fact:
-      cpuset: "scylla_cpuset_setup --cpuset `{{ perftune }}`"
-
-  - name: run cpuset
-    shell: |
-      {{ cpuset }}
-    become: true
-    when: skip_cpuset is defined and skip_cpuset|bool == false
-
-- name: configure custom scylla.yaml paramaters
+- name: Set initial tokens in scylla.yaml 
   lineinfile:
     path: /etc/scylla/scylla.yaml
-    regexp: '^{{ item.key }}'
-    line: "{{ item.key }}: {{ item.value }}"
+    regexp: '^(#\s*)?initial_token:'
+    line: "initial_token: {{ item.split('=')[1] }}"
     create: yes
   become: true
-  loop: "{{ lookup('dict', scylla_yaml_params) }}"
+  when: item.split('=')[0] == inventory_hostname
+  loop: "{{ _new_tokens.stdout_lines }}"
 
-- name: enable ssl options
-  include_tasks: ssl.yml
-  when:
-    - scylla_ssl is defined
-    - (scylla_ssl.internode.enabled|bool) or
-      (scylla_ssl.client.enabled|bool)
-
-- name: start_scylla_service dependent tasks
-  block:
-    # scylla_listen_address is a composite indirect value that depends on another per-host value - scylla_nic.
-    # Therefore in order to be able to get the corresponding value via hostvars[item] later in the play we need to
-    # have an actual value resolved.
-    # One way to do that is to resolve it and store as an Ansible fact.
-    - name: Resolve a scylla_listen_address as a fact
-      set_fact:
-        listen_address: "{{ scylla_listen_address }}"
-
-    # The same relates to the below
-    - name: Resolve scylla_broadcast_address
-      set_fact:
-        broadcast_address: "{{ scylla_broadcast_address }}"
-
-    # Start all seeders together since we don't know which one is the "first" - so let them figure it by themselves
-    - name: start scylla on seeders
-      service:
-        name: scylla-server
-        state: started
-      become: true
-      when: broadcast_address in scylla_seeds or inventory_hostname in scylla_seeds
-
-    - name: Wait for CQL port on seeders
-      wait_for:
-        port: 9042
-        host: "{{ listen_address }}"
-      when: broadcast_address in scylla_seeds or inventory_hostname in scylla_seeds
-
-    - name: Start scylla non-seeds nodes serially
-      run_once: true
-      include_tasks: start_one_node.yml
-      loop: "{{ groups['scylla'] }}"
-      when:
-        - item not in scylla_seeds
-        - hostvars[item]['broadcast_address'] not in scylla_seeds
-
-    - name: wait for the API port to come up on all nodes
-      wait_for:
-        port: "{{ scylla_api_port }}"
-        host: "{{ scylla_api_address }}"
-        timeout: 300
-
-    - name: wait for the cluster to become healthy
-      shell: |
-        nodetool status|grep -E '^UN|^UJ|^DN'|wc -l
-      register: node_count
-      until: node_count.stdout|int == ansible_play_batch|length
-      retries: 300
-      delay: 1
-      when: full_inventory|bool
-
-    - name: check API access
-      uri:
-        url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/failure_detector/endpoints/"
-        follow_redirects: none
-        method: GET
-      register: _result
-      until: _result.status == 200
-      retries: 90
-      delay: 1
-  when: start_scylla_service is defined and start_scylla_service|bool
-
-- name: generate monitoring configuration
-  include_tasks: monitoring_config.yml
-  when: generate_monitoring_config|bool
-  run_once: true
-
-- name: configure the Manager agents
-  include_tasks: manager_agents.yml
-  when: scylla_manager_enabled|bool
-
-- name: Update sysctl
-  ansible.posix.sysctl:
-    name: "{{ item.name }}"
-    value: "{{ item.value }}"
-  become: true
-  loop: "{{ sysctl }}"
-  ignore_errors: true
-  when: update_sysctl|bool is defined and update_sysctl|bool
-
+#- name: start_scylla_service dependent tasks
+#  block:
+#    # scylla_listen_address is a composite indirect value that depends on another per-host value - scylla_nic.
+#    # Therefore in order to be able to get the corresponding value via hostvars[item] later in the play we need to
+#    # have an actual value resolved.
+#    # One way to do that is to resolve it and store as an Ansible fact.
+#    - name: Resolve a scylla_listen_address as a fact
+#      set_fact:
+#        listen_address: "{{ scylla_listen_address }}"
+#
+#    # The same relates to the below
+#    - name: Resolve scylla_broadcast_address
+#      set_fact:
+#        broadcast_address: "{{ scylla_broadcast_address }}"
+#
+#    # Start all seeders together since we don't know which one is the "first" - so let them figure it by themselves
+#    - name: start scylla on seeders
+#      service:
+#        name: scylla-server
+#        state: started
+#      become: true
+#      when: broadcast_address in scylla_seeds or inventory_hostname in scylla_seeds
+#
+#    - name: Wait for CQL port on seeders
+#      wait_for:
+#        port: 9042
+#        host: "{{ listen_address }}"
+#      when: broadcast_address in scylla_seeds or inventory_hostname in scylla_seeds
+#
+#    - name: Start scylla non-seeds nodes serially
+#      run_once: true
+#      include_tasks: start_one_node.yml
+#      loop: "{{ groups['scylla'] }}"
+#      when:
+#        - item not in scylla_seeds
+#        - hostvars[item]['broadcast_address'] not in scylla_seeds
+#
+#    - name: wait for the API port to come up on all nodes
+#      wait_for:
+#        port: "{{ scylla_api_port }}"
+#        host: "{{ scylla_api_address }}"
+#        timeout: 300
+#
+#    - name: wait for the cluster to become healthy
+#      shell: |
+#        nodetool status|grep -E '^UN|^UJ|^DN'|wc -l
+#      register: node_count
+#      until: node_count.stdout|int == ansible_play_batch|length
+#      retries: 300
+#      delay: 1
+#      when: full_inventory|bool
+#
+#    - name: check API access
+#      uri:
+#        url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/failure_detector/endpoints/"
+#        follow_redirects: none
+#        method: GET
+#      register: _result
+#      until: _result.status == 200
+#      retries: 90
+#      delay: 1
+#  when: start_scylla_service is defined and start_scylla_service|bool
+#
+#- name: generate monitoring configuration
+#  include_tasks: monitoring_config.yml
+#  when: generate_monitoring_config|bool
+#  run_once: true
+#
+#- name: configure the Manager agents
+#  include_tasks: manager_agents.yml
+#  when: scylla_manager_enabled|bool
+#
+#- name: Update sysctl
+#  ansible.posix.sysctl:
+#    name: "{{ item.name }}"
+#    value: "{{ item.value }}"
+#  become: true
+#  loop: "{{ sysctl }}"
+#  ignore_errors: true
+#  when: update_sysctl|bool is defined and update_sysctl|bool
+#
