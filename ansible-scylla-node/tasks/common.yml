@@ -330,27 +330,23 @@
         cqlsh {{ broadcast_address }} -u {{ cql_username }} -p {{ cql_password }} -e "ALTER KEYSPACE system_auth WITH replication = {'class': '{{ replication_strategy }}', {{ dcs_to_rf | unique | join(',') }}};"
       run_once: true
 
+    - name: Cleanup system_auth
+      async_task:
+        shell: |
+          nodetool cleanup system_auth
+        alias: scylla_cleanup_system_auth
+        async: "{{ cleanup_timeout_seconds }}"
+        retries: "{{ cleanup_timeout_seconds // 30 }}" # retries = cleanup_timeout_seconds / delay
+        delay: 30
+      register: _cleanup_output
+
     - name: Repair system_auth
       include_tasks: repair.yml
       vars:
         keyspace: 'system_auth'
 
-    - name: Trigger system_auth cleanup
-      uri:
-        url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/storage_service/keyspace_cleanup/system_auth"
-        method: POST
-      register: _cleanup_out
-      async: "{{ cleanup_timeout_seconds }}"
-      poll: 0
-
-    - name: Wait for cleanup to finish
-      async_status:
-        jid: "{{ _cleanup_out.ansible_job_id }}"
-      register: job_result
-      until: job_result.finished
-      failed_when: job_result.status != 200 or job_result.json != 0
-      retries: "{{ cleanup_timeout_seconds // 30 }}" # retries = cleanup_timeout_seconds / delay
-      delay: 30
+    - name: Cleanup logs
+      debug: var=_cleanup_output
   when:
     - adjust_system_auth_replication is defined and adjust_system_auth_replication|bool
     - _authentication_enabled.found is defined and _authentication_enabled.found >= 1

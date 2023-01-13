@@ -1,6 +1,11 @@
 [authentication] ;; Change these after the user/password has been updated from the default
+{% if cql_username is defined and cql_password is defined %}
+username = {{ cql_username }}
+password = {{ cql_password }}
+{% else %}
 username = cassandra
 password = cassandra
+{% endif %}
 
 [connection]
 hostname = {{ groups['scylla'][0] }}
