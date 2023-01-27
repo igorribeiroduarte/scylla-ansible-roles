@@ -1,3 +1,18 @@
+- name: Get datacenter name
+  uri:
+    url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/snitch/datacenter"
+    method: GET
+  register: _datacenter_out
+  until: _datacenter_out.status == 200
+  retries: 5
+  delay: 1
+
+- name: Prepare per DC replication_factor list
+  set_fact:
+    dcs_to_rf: "{{ dcs_to_rf | default([]) + [\"'\" + hostvars[item]['_datacenter_out'].json + \"':\" + replication_factor|string] }}"
+  loop: "{{ groups['scylla'] }}"
+  run_once: true
+
 - name: Check if authentication is enabled
   lineinfile:
     path: /etc/scylla/scylla.yaml
@@ -9,21 +24,6 @@
 
 - name: If authentication is enabled, adjust replication for system_auth keyspace
   block:
-    - name: Get datacenter name
-      uri:
-        url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/snitch/datacenter"
-        method: GET
-      register: _datacenter_out
-      until: _datacenter_out.status == 200
-      retries: 5
-      delay: 1
-
-    - name: Prepare per DC replication_factor list
-      set_fact:
-        dcs_to_rf: "{{ dcs_to_rf | default([]) + [\"'\" + hostvars[item]['_datacenter_out'].json + \"':\" + replication_factor|string] }}"
-      loop: "{{ groups['scylla'] }}"
-      run_once: true
-
     - name: Adjust replication for system_auth keyspace
       shell: |
         cqlsh {{ broadcast_address }} -u {{ cql_username }} -p {{ cql_password }} -e "ALTER KEYSPACE system_auth WITH replication = {'class': '{{ replication_strategy }}', {{ dcs_to_rf | unique | join(',') }}};"
@@ -37,7 +37,7 @@
         async: "{{ cleanup_timeout_seconds }}"
         retries: "{{ cleanup_timeout_seconds // 30 }}" # retries = cleanup_timeout_seconds / delay
         delay: 30
-      register: _cleanup_output
+      register: _system_auth_cleanup_output
 
     - name: Repair system_auth
       include_tasks: repair.yml
@@ -45,8 +45,41 @@
         keyspace: 'system_auth'
 
     - name: Cleanup logs
-      debug: var=_cleanup_output
+      debug: var=_system_auth_cleanup_output
   when:
     - adjust_system_auth_replication is defined and adjust_system_auth_replication|bool
     - _authentication_enabled.found is defined and _authentication_enabled.found >= 1
+    - replication_factor is defined and replication_strategy is defined
+
+- name: Check if audit is enabled
+  lineinfile:
+    path: /etc/scylla/scylla.yaml
+    regexp: "^(audit: \"table\")"
+    state: absent
+  check_mode: yes
+  register: _audit_enabled
+  run_once: true
+
+- name: If audit is enabled, adjust replication for audit keyspace
+  block:
+    - name: Adjust replication for audit keyspace
+      shell: |
+        cqlsh {{ broadcast_address }} -u {{ cql_username }} -p {{ cql_password }} -e "ALTER KEYSPACE audit WITH replication = {'class': '{{ replication_strategy }}', {{ dcs_to_rf | unique | join(',') }}};"
+      run_once: true
+
+    - name: Cleanup audit ks
+      async_task:
+        shell: |
+          nodetool cleanup audit
+        alias: scylla_cleanup_audit
+        async: "{{ cleanup_timeout_seconds }}"
+        retries: "{{ cleanup_timeout_seconds // 30 }}" # retries = cleanup_timeout_seconds / delay
+        delay: 30
+      register: _audit_cleanup_output
+
+    - name: Cleanup logs
+      debug: var=_audit_cleanup_output
+  when:
+    - adjust_audit_replication is defined and adjust_audit_replication|bool
+    - _audit_enabled.found is defined and _audit_enabled.found >= 1
     - replication_factor is defined and replication_strategy is defined
