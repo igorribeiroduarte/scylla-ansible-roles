@@ -299,58 +299,8 @@
       when: token_distributor is defined
   when: start_scylla_service is defined and start_scylla_service|bool
 
-- name: Check if authentication is enabled
-  lineinfile:
-    path: /etc/scylla/scylla.yaml
-    regexp: '^(authenticator: (.*PasswordAuthenticator.*|.*TransitionalAuthenticator.*))|(authorizer: (.*CassandraAuthorizer.*|.*TransitionalAuthorizer.*))'
-    state: absent
-  check_mode: yes
-  register: _authentication_enabled
-  run_once: true
-
-- name: If authentication is enabled, adjust replication for system_auth keyspace
-  block:
-    - name: Get datacenter name
-      uri:
-        url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/snitch/datacenter"
-        method: GET
-      register: _datacenter_out
-      until: _datacenter_out.status == 200
-      retries: 5
-      delay: 1
-
-    - name: Prepare per DC replication_factor list
-      set_fact:
-        dcs_to_rf: "{{ dcs_to_rf | default([]) + [\"'\" + hostvars[item]['_datacenter_out'].json + \"':\" + replication_factor|string] }}"
-      loop: "{{ groups['scylla'] }}"
-      run_once: true
-
-    - name: Adjust replication for system_auth keyspace
-      shell: |
-        cqlsh {{ broadcast_address }} -u {{ cql_username }} -p {{ cql_password }} -e "ALTER KEYSPACE system_auth WITH replication = {'class': '{{ replication_strategy }}', {{ dcs_to_rf | unique | join(',') }}};"
-      run_once: true
-
-    - name: Cleanup system_auth
-      async_task:
-        shell: |
-          nodetool cleanup system_auth
-        alias: scylla_cleanup_system_auth
-        async: "{{ cleanup_timeout_seconds }}"
-        retries: "{{ cleanup_timeout_seconds // 30 }}" # retries = cleanup_timeout_seconds / delay
-        delay: 30
-      register: _cleanup_output
-
-    - name: Repair system_auth
-      include_tasks: repair.yml
-      vars:
-        keyspace: 'system_auth'
-
-    - name: Cleanup logs
-      debug: var=_cleanup_output
-  when:
-    - adjust_system_auth_replication is defined and adjust_system_auth_replication|bool
-    - _authentication_enabled.found is defined and _authentication_enabled.found >= 1
-    - replication_factor is defined and replication_strategy is defined
+- name: Adjust keyspaces
+  include_tasks: adjust_keyspaces.yml
 
 - name: generate monitoring configuration
   include_tasks: monitoring_config.yml
