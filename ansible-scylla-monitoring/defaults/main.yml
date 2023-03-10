@@ -58,3 +58,5 @@ prometheus_url: 'https://github.com/prometheus/prometheus/releases/download/v2.3
 
 # Additional arguments to pass to the prometheus binary
 #prometheus_args: "--web.enable-admin-api --storage.tsdb.retention.size=50G"
+
+use_toppartitions: false

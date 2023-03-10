@@ -130,3 +130,13 @@
     dest: "{{ scylla_monitoring_config_path }}/rule_config.yml"
     mode: '0644'
   when: rule_config_file is defined and rule_config_file == 'default'
+
+- name: Copy dashboard containing toppartitions graphs
+  copy:
+    src: "files/scylla-overview.{{ item }}.json"
+    dest: "{{ base_dir }}/grafana/build/ver_{{ item }}/scylla-overview.{{ item }}.json"
+    mode: '0644'
+  loop: "{{ scylla_monitoring_dashboards_versions }}"
+  when:
+    - scylla_monitoring_dashboards_versions is defined
+    - use_toppartitions is defined and use_toppartitions|bool
