@@ -159,9 +159,9 @@
 
 - name: finalize Scylla node configuration
   block:
-  - name: run bootparam setup
-    shell: |
-      scylla_bootparam_setup
+  #- name: run bootparam setup
+  #  shell: |
+  #    scylla_bootparam_setup
 
   - name: set up coredump
     shell: |
@@ -320,14 +320,14 @@
         host: "{{ scylla_api_address }}"
         timeout: 300
 
-    - name: wait for the cluster to become healthy
-      shell: |
-        nodetool status|grep -E '^UN|^UJ|^DN'|wc -l
-      register: node_count
-      until: node_count.stdout|int == ansible_play_batch|length
-      retries: 300
-      delay: 1
-      when: full_inventory|bool
+    #- name: wait for the cluster to become healthy
+    #  shell: |
+    #    nodetool status|grep -E '^UN|^UJ|^DN'|wc -l
+    #  register: node_count
+    #  until: node_count.stdout|int == ansible_play_batch|length
+    #  retries: 300
+    #  delay: 1
+    #  when: full_inventory|bool
 
     - name: check API access
       uri:
@@ -387,9 +387,9 @@
     - _audit_enabled is defined and _audit_enabled|bool
     - audit_rf is defined and audit_replication_strategy is defined
 
-- name: configure the Manager agents
-  include_tasks: manager_agents.yml
-  when: scylla_manager_enabled|bool
+#- name: configure the Manager agents
+#  include_tasks: manager_agents.yml
+#  when: scylla_manager_enabled|bool
 
 - name: Update sysctl
   ansible.posix.sysctl:
