@@ -1,136 +1,136 @@
 ---
 
-- name: Deactivate firewall
-  block:
-    - name: Deactivate front-end firewall services
-      service:
-        name: "{{ item }}"
-        state: stopped
-        enabled: false
-      loop:
-        - firewalld.service
-        - iptables_services.service
-        - ufw.service
-      when: ansible_facts.services[item] is defined
-    - name: Flush all iptables rules
-      iptables:
-        flush: yes
-      when: "'iptables' in ansible_facts.packages"
-  when: not firewall_enabled
-  become: true
+#- name: Deactivate firewall
+#  block:
+#    - name: Deactivate front-end firewall services
+#      service:
+#        name: "{{ item }}"
+#        state: stopped
+#        enabled: false
+#      loop:
+#        - firewalld.service
+#        - iptables_services.service
+#        - ufw.service
+#      when: ansible_facts.services[item] is defined
+#    - name: Flush all iptables rules
+#      iptables:
+#        flush: yes
+#      when: "'iptables' in ansible_facts.packages"
+#  when: not firewall_enabled
+#  become: true
+#
+#- name: configure RAID via Scylla-setup
+#  block:
+#    - name: check for current raid
+#      shell: |
+#        lsblk | grep -w "/var/lib/scylla" | wc -l
+#      register: present_scylla_disks
+#
+#    - name: run raid setup if there is no scylla mount yet
+#      shell: |
+#        scylla_raid_setup --disks "{{ scylla_raid_setup | join(',') }}" --update-fstab
+#      become: true
+#      when: scylla_raid_setup is defined and scylla_raid_setup|length > 0 and present_scylla_disks.stdout|int == 0
+#
+## Resulting map -> {'dc1': [node1, node2, node3], 'dc2': [node4, node5, node6]}
+#- name: Create a map from dc to its list of nodes
+#  set_fact:
+#    dc_to_node_list: "{{ dc_to_node_list | default({}) | combine( {hostvars[item]['dc']: (dc_to_node_list | default({}))[hostvars[item]['dc']] | default([]) + [item]} ) }}"
+#  loop: "{{ groups['scylla'] }}"
+#  run_once: true
+#  when: scylla_io_probe_dc_aware|bool
+#
+#- name: Collect IO settings for the first node of every DC
+#  block:
+#    - name: check for existing io_properties
+#      stat:
+#        path: /etc/scylla.d/io_properties.yaml
+#      register: io_prop_stat
+#
+#    - name: Measure IO settings on one node
+#      shell: |
+#        scylla_io_setup
+#      when: io_prop_stat.stat.exists|bool == False
+#
+#    - name: store /etc/scylla.d/io_properties.yaml
+#      shell: |
+#        cat /etc/scylla.d/io_properties.yaml
+#      register: _io_properties
+#
+#    - set_fact:
+#        io_properties: "{{ _io_properties.stdout }}"
+#
+#    - name: store /etc/scylla.d/io.conf
+#      shell: |
+#        cat /etc/scylla.d/io.conf
+#      register: _io_conf
+#
+#    - set_fact:
+#        io_conf: "{{ _io_conf.stdout_lines[0] }}"
+#  when: scylla_io_probe|bool == True and (scylla_io_probe_dc_aware|bool == False or dc_to_node_list[dc][0] == inventory_hostname)
+#  run_once: "{{ not scylla_io_probe_dc_aware|bool }}"
+#  become: true
+#
+#- name: For every node, check if io.conf already exists and if it's not empty
+#  block:
+#  - stat:
+#      path: /etc/scylla.d/io.conf
+#    register: _io_conf_file
+#
+#  # During installation, scylla creates an io.conf filled only with comments and this file needs to be replaced
+#  - name: Check if file is empty or filled only with comments
+#    shell: "cat /etc/scylla.d/io.conf | grep -v ^#"
+#    register: _io_conf_out
+#    ignore_errors: true
+#    when: _io_conf_file.stat.exists|bool
+#
+#- name: Set io.conf
+#  lineinfile:
+#    path: /etc/scylla.d/io.conf
+#    regexp: '^SEASTAR_IO='
+#    line: "{% if scylla_io_probe|bool and scylla_io_probe_dc_aware|bool %}{{ hostvars[dc_to_node_list[dc][0]]['io_conf'] }}{% else %}{{ io_conf }}{% endif %}"
+#    create: yes
+#  become: true
+#  when: io_conf is defined and (_io_conf_file.stat.exists|bool == false or _io_conf_out.stdout|length == 0 or always_replace_io_conf|bool)
+#
+#- name: For every node, check if io_properties.yaml already exists
+#  stat:
+#    path: /etc/scylla.d/io_properties.yaml
+#  register: _io_properties_file
+#
+#- name: Set io_properties
+#  template:
+#    src: templates/io_properties.yaml.j2
+#    dest: /etc/scylla.d/io_properties.yaml
+#    owner: root
+#    group: root
+#    mode: '0644'
+#  become: true
+#  when: _io_properties_file.stat.exists|bool == false or always_replace_io_properties|bool
 
-- name: configure RAID via Scylla-setup
-  block:
-    - name: check for current raid
-      shell: |
-        lsblk | grep -w "/var/lib/scylla" | wc -l
-      register: present_scylla_disks
-
-    - name: run raid setup if there is no scylla mount yet
-      shell: |
-        scylla_raid_setup --disks "{{ scylla_raid_setup | join(',') }}" --update-fstab
-      become: true
-      when: scylla_raid_setup is defined and scylla_raid_setup|length > 0 and present_scylla_disks.stdout|int == 0
-
-# Resulting map -> {'dc1': [node1, node2, node3], 'dc2': [node4, node5, node6]}
-- name: Create a map from dc to its list of nodes
-  set_fact:
-    dc_to_node_list: "{{ dc_to_node_list | default({}) | combine( {hostvars[item]['dc']: (dc_to_node_list | default({}))[hostvars[item]['dc']] | default([]) + [item]} ) }}"
-  loop: "{{ groups['scylla'] }}"
-  run_once: true
-  when: scylla_io_probe_dc_aware|bool
-
-- name: Collect IO settings for the first node of every DC
-  block:
-    - name: check for existing io_properties
-      stat:
-        path: /etc/scylla.d/io_properties.yaml
-      register: io_prop_stat
-
-    - name: Measure IO settings on one node
-      shell: |
-        scylla_io_setup
-      when: io_prop_stat.stat.exists|bool == False
-
-    - name: store /etc/scylla.d/io_properties.yaml
-      shell: |
-        cat /etc/scylla.d/io_properties.yaml
-      register: _io_properties
-
-    - set_fact:
-        io_properties: "{{ _io_properties.stdout }}"
-
-    - name: store /etc/scylla.d/io.conf
-      shell: |
-        cat /etc/scylla.d/io.conf
-      register: _io_conf
-
-    - set_fact:
-        io_conf: "{{ _io_conf.stdout_lines[0] }}"
-  when: scylla_io_probe|bool == True and (scylla_io_probe_dc_aware|bool == False or dc_to_node_list[dc][0] == inventory_hostname)
-  run_once: "{{ not scylla_io_probe_dc_aware|bool }}"
-  become: true
-
-- name: For every node, check if io.conf already exists and if it's not empty
-  block:
-  - stat:
-      path: /etc/scylla.d/io.conf
-    register: _io_conf_file
-
-  # During installation, scylla creates an io.conf filled only with comments and this file needs to be replaced
-  - name: Check if file is empty or filled only with comments
-    shell: "cat /etc/scylla.d/io.conf | grep -v ^#"
-    register: _io_conf_out
-    ignore_errors: true
-    when: _io_conf_file.stat.exists|bool
-
-- name: Set io.conf
-  lineinfile:
-    path: /etc/scylla.d/io.conf
-    regexp: '^SEASTAR_IO='
-    line: "{% if scylla_io_probe|bool and scylla_io_probe_dc_aware|bool %}{{ hostvars[dc_to_node_list[dc][0]]['io_conf'] }}{% else %}{{ io_conf }}{% endif %}"
-    create: yes
-  become: true
-  when: io_conf is defined and (_io_conf_file.stat.exists|bool == false or _io_conf_out.stdout|length == 0 or always_replace_io_conf|bool)
-
-- name: For every node, check if io_properties.yaml already exists
-  stat:
-    path: /etc/scylla.d/io_properties.yaml
-  register: _io_properties_file
-
-- name: Set io_properties
-  template:
-    src: templates/io_properties.yaml.j2
-    dest: /etc/scylla.d/io_properties.yaml
-    owner: root
-    group: root
-    mode: '0644'
-  become: true
-  when: _io_properties_file.stat.exists|bool == false or always_replace_io_properties|bool
-
-- name: configure NTP
-  shell: |
-    scylla_ntp_setup
-  become: true
-  when: skip_ntp is defined and skip_ntp|bool == false
-
-- name: node exporter setup
-  shell: |
-    node_exporter_install --force
-  when: install_type == 'online'
-  become: true
-  notify:
-    - node_exporter start
-  ignore_errors: true
-  #TODO: stop ignoring errors when the node_exporter_install script fix is available in all actual versions, resp. use only for < 5.0 / 2022
-
-- name: node exporter setup from 5.0/2022
-  service:
-        name: scylla-node-exporter
-        state: started
-  become: true
-  ignore_errors: true
-  #TODO: stop ignoring errors when a version check is added
+#- name: configure NTP
+#  shell: |
+#    scylla_ntp_setup
+#  become: true
+#  when: skip_ntp is defined and skip_ntp|bool == false
+#
+#- name: node exporter setup
+#  shell: |
+#    node_exporter_install --force
+#  when: install_type == 'online'
+#  become: true
+#  notify:
+#    - node_exporter start
+#  ignore_errors: true
+#  #TODO: stop ignoring errors when the node_exporter_install script fix is available in all actual versions, resp. use only for < 5.0 / 2022
+#
+#- name: node exporter setup from 5.0/2022
+#  service:
+#        name: scylla-node-exporter
+#        state: started
+#  become: true
+#  ignore_errors: true
+#  #TODO: stop ignoring errors when a version check is added
 
 - name: configure Scylla
   shell: |
@@ -168,18 +168,18 @@
       scylla_coredump_setup --dump-to-raiddir
     when: skip_coredump is defined and skip_coredump|bool == false
 
-  - name: set up swap
-    shell: |
-      scylla_swap_setup{% if swap_file_size_mb is defined and swap_file_size_mb|int > 0 %} --swap-size {{ [swap_file_size_mb|int, 1024]|max // 1024 }} {% endif %}
-    register: swap_setup
-    failed_when:
-    - swap_setup.rc > 0
-    - '"swap already configured, exiting setup" not in swap_setup.stdout'
-    when: skip_swap is defined and skip_swap|bool == false
+  #- name: set up swap
+  #  shell: |
+  #    scylla_swap_setup{% if swap_file_size_mb is defined and swap_file_size_mb|int > 0 %} --swap-size {{ [swap_file_size_mb|int, 1024]|max // 1024 }} {% endif %}
+  #  register: swap_setup
+  #  failed_when:
+  #  - swap_setup.rc > 0
+  #  - '"swap already configured, exiting setup" not in swap_setup.stdout'
+  #  when: skip_swap is defined and skip_swap|bool == false
 
-  - name: configure cpu scaling
-    shell: |
-      scylla_cpuscaling_setup
+  #- name: configure cpu scaling
+  #  shell: |
+  #    scylla_cpuscaling_setup
 
   - name: configure fstrim
     shell: |
@@ -245,15 +245,15 @@
     become: true
     when: skip_cpuset is defined and skip_cpuset|bool == false
 
-  - name: set devmode command
-    set_fact:
-      devmode_command: "scylla_dev_mode_setup --developer-mode 1"
+  #- name: set devmode command
+  #  set_fact:
+  #    devmode_command: "scylla_dev_mode_setup --developer-mode 1"
 
-  - name: run devmode
-    shell: |
-      {{ devmode_command }}
-    become: true
-    when: (devmode is defined) and (devmode|bool)
+  #- name: run devmode
+  #  shell: |
+  #    {{ devmode_command }}
+  #  become: true
+  #  when: (devmode is defined) and (devmode|bool)
 
 - name: configure custom scylla.yaml paramaters
   lineinfile:
@@ -286,33 +286,33 @@
 
 - name: start_scylla_service dependent tasks
   block:
-    - name: Generate tokens for the new nodes
-      run_once: true
-      include_tasks: generate_tokens.yml
-      when: token_distributor is defined
+    #- name: Generate tokens for the new nodes
+    #  run_once: true
+    #  include_tasks: generate_tokens.yml
+    #  when: token_distributor is defined
 
-    # Start all seeders together since we don't know which one is the "first" - so let them figure it by themselves
-    - name: start scylla on seeders
-      service:
-        name: scylla-server
-        state: started
-      become: true
-      when: broadcast_address in scylla_seeds or inventory_hostname in scylla_seeds
+    ## Start all seeders together since we don't know which one is the "first" - so let them figure it by themselves
+    #- name: start scylla on seeders
+    #  service:
+    #    name: scylla-server
+    #    state: started
+    #  become: true
+    #  when: broadcast_address in scylla_seeds or inventory_hostname in scylla_seeds
 
-    - name: Wait for CQL port on seeders
-      wait_for:
-        port: 9042
-        host: "{{ listen_address }}"
-        timeout: "{{ scylla_bootstrap_wait_time_sec }}"
-      when: broadcast_address in scylla_seeds or inventory_hostname in scylla_seeds
+    #- name: Wait for CQL port on seeders
+    #  wait_for:
+    #    port: 9042
+    #    host: "{{ listen_address }}"
+    #    timeout: "{{ scylla_bootstrap_wait_time_sec }}"
+    #  when: broadcast_address in scylla_seeds or inventory_hostname in scylla_seeds
 
     - name: Start scylla non-seeds nodes serially
-      run_once: true
+      #run_once: true
       include_tasks: start_one_node.yml
-      loop: "{{ groups['scylla'] }}"
-      when:
-        - item not in scylla_seeds
-        - hostvars[item]['broadcast_address'] not in scylla_seeds
+      #loop: "{{ groups['scylla'] }}"
+      #when:
+      #  - item not in scylla_seeds
+      #  - hostvars[item]['broadcast_address'] not in scylla_seeds
 
     - name: wait for the API port to come up on all nodes
       wait_for:
@@ -348,49 +348,49 @@
       when: token_distributor is defined
   when: start_scylla_service is defined and start_scylla_service|bool
 
-- name: Check if authentication and audit are enabled
-  block:
-    - command: cat /etc/scylla/scylla.yaml
-      ignore_errors: true
-      register: _scylla_yaml_out
-
-    - set_fact:
-        _scylla_yaml_map: "{{ _scylla_yaml_out.stdout | from_yaml }}"
-
-    - set_fact:
-        _authentication_enabled: |
-          {% if (_scylla_yaml_map.authenticator is defined and (_scylla_yaml_map.authenticator == 'TransitionalAuthenticator' or _scylla_yaml_map.authenticator == 'PasswordAuthenticator')) or
-          (_scylla_yaml_map.authorizer is defined and (_scylla_yaml_map.authorizer == 'TransitionalAuthorizer' or _scylla_yaml_map.authorizer == 'CassandraAuthorizer')) %}True{% else %}False{% endif %}
-        _audit_enabled: |
-          {% if (_scylla_yaml_map.audit is defined and _scylla_yaml_map.audit == 'table') %}True{% else %}False{% endif %}
-  run_once: true
-
-- name: Adjust replication for system_auth keyspace
-  include_tasks: adjust_keyspace_replication.yml
-  vars:
-    _keyspace: "system_auth"
-    _keyspace_replication_strategy: "{{ system_auth_replication_strategy }}"
-    _keyspace_rf: "{{ system_auth_rf }}"
-  when:
-    - adjust_system_auth_replication is defined and adjust_system_auth_replication|bool
-    - _authentication_enabled is defined and _authentication_enabled|bool
-    - system_auth_rf is defined and system_auth_replication_strategy is defined
-
-- name: Adjust replication for audit keyspace
-  include_tasks: adjust_keyspace_replication.yml
-  vars:
-    _keyspace: "audit"
-    _keyspace_replication_strategy: "{{ audit_replication_strategy }}"
-    _keyspace_rf: "{{ audit_rf }}"
-  when:
-    - adjust_audit_replication is defined and adjust_audit_replication|bool
-    - _audit_enabled is defined and _audit_enabled|bool
-    - audit_rf is defined and audit_replication_strategy is defined
-
-#- name: configure the Manager agents
-#  include_tasks: manager_agents.yml
-#  when: scylla_manager_enabled|bool
-
+#- name: Check if authentication and audit are enabled
+#  block:
+#    - command: cat /etc/scylla/scylla.yaml
+#      ignore_errors: true
+#      register: _scylla_yaml_out
+#
+#    - set_fact:
+#        _scylla_yaml_map: "{{ _scylla_yaml_out.stdout | from_yaml }}"
+#
+#    - set_fact:
+#        _authentication_enabled: |
+#          {% if (_scylla_yaml_map.authenticator is defined and (_scylla_yaml_map.authenticator == 'TransitionalAuthenticator' or _scylla_yaml_map.authenticator == 'PasswordAuthenticator')) or
+#          (_scylla_yaml_map.authorizer is defined and (_scylla_yaml_map.authorizer == 'TransitionalAuthorizer' or _scylla_yaml_map.authorizer == 'CassandraAuthorizer')) %}True{% else %}False{% endif %}
+#        _audit_enabled: |
+#          {% if (_scylla_yaml_map.audit is defined and _scylla_yaml_map.audit == 'table') %}True{% else %}False{% endif %}
+#  run_once: true
+#
+#- name: Adjust replication for system_auth keyspace
+#  include_tasks: adjust_keyspace_replication.yml
+#  vars:
+#    _keyspace: "system_auth"
+#    _keyspace_replication_strategy: "{{ system_auth_replication_strategy }}"
+#    _keyspace_rf: "{{ system_auth_rf }}"
+#  when:
+#    - adjust_system_auth_replication is defined and adjust_system_auth_replication|bool
+#    - _authentication_enabled is defined and _authentication_enabled|bool
+#    - system_auth_rf is defined and system_auth_replication_strategy is defined
+#
+#- name: Adjust replication for audit keyspace
+#  include_tasks: adjust_keyspace_replication.yml
+#  vars:
+#    _keyspace: "audit"
+#    _keyspace_replication_strategy: "{{ audit_replication_strategy }}"
+#    _keyspace_rf: "{{ audit_rf }}"
+#  when:
+#    - adjust_audit_replication is defined and adjust_audit_replication|bool
+#    - _audit_enabled is defined and _audit_enabled|bool
+#    - audit_rf is defined and audit_replication_strategy is defined
+#
+##- name: configure the Manager agents
+##  include_tasks: manager_agents.yml
+##  when: scylla_manager_enabled|bool
+#
 - name: Update sysctl
   ansible.posix.sysctl:
     name: "{{ item.name }}"
