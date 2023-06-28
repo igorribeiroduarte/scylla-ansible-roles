@@ -1,28 +1,73 @@
+##    - name: check for the replaced node being a seed
+##      fail:
+##        msg: "The node being replaced {{ replaced_node }} is a seed node. Please demote it to a non-seed first and try again."
+##      when: replaced_node in scylla_seeds
+#
+#    - name: Check if RBNO is enabled
+#
+#    - name: If the node is accessible, check if it is down
+#
+#    - name: Check if all the other nodes are up
+#
+#    - name: Cut inbound and outbound network traffic for the dead node and from all the other nodes to the dead node as well
+#
+#    - name: Double check that only the expected nodes are down
+#
+#    - name: Run update with replace_address_first_boot set in the new node and remember to pass a big timeout. Also remember to pass one of the alive nodes as seed
+#
+#    - name: Remove replace_address_first_boot
+#
+#    - name: If RBNO is disabled, run repair
+
+
 ---
 - name: Add Scylla without starting
-  # new_node should be the IP of the node that comes into the cluster. The node being replaced should be in `replaced_node` variable below
-  hosts: new_node
+  hosts: scylla
   become: true
-  vars:
-    full_inventory: false
-    start_scylla_service: false
-
-    #address of the node being replaced. Please make sure to remove it from the inventory when done.
-    replaced_node: 1.2.3.4
-
-    # variables for the Scylla node role
-    # Please use the same parameters as were used for the rest of the existing cluster
+  vars_files:
+    - vars/main.yml
 
     # Use the same parameters as for the rest of the cluster with the addition of the following:
     scylla_yaml_params:
       replace_address_first_boot: {{ replaced_node }}
 
   tasks:
-    - name: check for the replaced node being a seed
-      fail:
-        msg: "The node being replaced {{ replaced_node }} is a seed node. Please demote it to a non-seed first and try again."
-      when: replaced_node in scylla_seeds
+    - name: Check if CQL port is up on {{ hostvars[replaced_node]['listen_address'] }}
+      wait_for:
+        port: 9042
+        host: "{{ hostvars[replaced_node]['listen_address'] }}"
+        timeout: 60
+      register: _wait_for_cql_port_output
+      ignore_errors: true
+      delegate_to: "{{ replaced_node }}"
+      run_once: true
+      when: _replaced_node_accessible | bool
 
+    # FIXME: Here we should validate that either the node is inaccessible or accessible with scylla down
+    - debug:
+        msg: "{{ _wait_for_cql_port_output }}"
+
+    - name: Check if the other nodes are UP
+      wait_for:
+        port: 9042
+        host: "{{ listen_address }}"
+        timeout: 60
+      when: inventory_hostname != replaced_node and inventory_hostname not in ignored_nodes
+
+    # iptables -A INPUT -s [IP] -j DROP
+    - name: Blacklist replaced node's broadcast_address to prevent it from trying to join the cluster again
+      iptables:
+        chain: INPUT
+        source: "{{ hostvars[replaced_node]['broadcast_address'] }}"
+        jump: DROP
+      when: inventory_hostname != replaced_node
+
+    - name: Also blacklist listen_address, since scylla might use it when broadcast_address is omitted
+      iptables:
+        chain: INPUT
+        source: "{{ hostvars[replaced_node]['listen_address'] }}"
+        jump: DROP
+      when: inventory_hostname != replaced_node
   roles:
     - ansible-scylla-node
 
