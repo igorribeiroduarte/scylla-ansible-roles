@@ -21,7 +21,11 @@ commitlog_segment_size_in_mb: 32
 seed_provider:
     - class_name: org.apache.cassandra.locator.SimpleSeedProvider
       parameters:
+{% if temporary_seed is defined %}
+          - seeds: "{{ temporary_seed }}"
+{% else %}
           - seeds: "{{ scylla_seeds | join(',') }}"
+{% endif %}
 
 listen_address: {{ scylla_listen_address }}
 native_transport_port: 9042

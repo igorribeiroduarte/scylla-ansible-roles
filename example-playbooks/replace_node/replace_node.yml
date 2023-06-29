@@ -24,13 +24,8 @@
 - name: Add Scylla without starting
   hosts: scylla
   become: true
-  vars_files:
-    - vars/main.yml
-
-    # Use the same parameters as for the rest of the cluster with the addition of the following:
-    scylla_yaml_params:
-      replace_address_first_boot: {{ replaced_node }}
-
+  vars:
+    start_scylla_service: false
   tasks:
     - name: Check if CQL port is up on {{ hostvars[replaced_node]['listen_address'] }}
       wait_for:
@@ -68,42 +63,42 @@
         source: "{{ hostvars[replaced_node]['listen_address'] }}"
         jump: DROP
       when: inventory_hostname != replaced_node
-  roles:
-    - ansible-scylla-node
+#  roles:
+#    - ansible-scylla-node
 
 
-- name: Start scylla services
-  # new_node should be the IP of the node that comes into the cluster. The node being replaced should be in `replaced_node` variable below
-  hosts: new_node
-  become: true
-
-  tasks:
-    - name: start scylla
-      service:
-        name: scylla-server
-        state: started
-      become: true
-      ignore_errors: true
-      #TODO: remove ignore_errors when ansible is bumped to 2.10.4 or 2.9.16 as per https://github.com/ansible/ansible/issues/71528
-
-    - name: wait for the cluster to become healthy
-      shell: |
-        nodetool status|grep -E '^UN|^UJ|^DN'|grep "{{ vars['ansible_'~scylla_nic].ipv4.address }}"| wc -l
-      register: node_count
-      until: node_count.stdout|int == 1
-      retries: 300
-      delay: 1
-
-    - name: remove the replace_address_first_boot record
-      lineinfile:
-        path: /etc/scylla/scylla.yaml
-        regexp: '^replace_address_first_boot:'
-        state: absent
-      become: true
-
-    - name: run nodetool repair -pr
-      shell: |
-        nodetool repair -pr
-
-
-
+#- name: Start scylla services
+#  # new_node should be the IP of the node that comes into the cluster. The node being replaced should be in `replaced_node` variable below
+#  hosts: new_node
+#  become: true
+#
+#  tasks:
+#    - name: start scylla
+#      service:
+#        name: scylla-server
+#        state: started
+#      become: true
+#      ignore_errors: true
+#      #TODO: remove ignore_errors when ansible is bumped to 2.10.4 or 2.9.16 as per https://github.com/ansible/ansible/issues/71528
+#
+#    - name: wait for the cluster to become healthy
+#      shell: |
+#        nodetool status|grep -E '^UN|^UJ|^DN'|grep "{{ vars['ansible_'~scylla_nic].ipv4.address }}"| wc -l
+#      register: node_count
+#      until: node_count.stdout|int == 1
+#      retries: 300
+#      delay: 1
+#
+#    - name: remove the replace_address_first_boot record
+#      lineinfile:
+#        path: /etc/scylla/scylla.yaml
+#        regexp: '^replace_address_first_boot:'
+#        state: absent
+#      become: true
+#
+#    - name: run nodetool repair -pr
+#      shell: |
+#        nodetool repair -pr
+#
+#
+#

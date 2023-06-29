@@ -1,5 +1,8 @@
 ---
 
+#- debug:
+#    msg: "{{ ansible_play_hosts_all }}"
+
 # Facts gathering
 - name: Populate service facts
   service_facts:
