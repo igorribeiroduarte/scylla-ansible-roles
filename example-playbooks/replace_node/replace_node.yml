@@ -1,25 +1,25 @@
-##    - name: check for the replaced node being a seed
-##      fail:
-##        msg: "The node being replaced {{ replaced_node }} is a seed node. Please demote it to a non-seed first and try again."
-##      when: replaced_node in scylla_seeds
+###    - name: check for the replaced node being a seed
+###      fail:
+###        msg: "The node being replaced {{ replaced_node }} is a seed node. Please demote it to a non-seed first and try again."
+###      when: replaced_node in scylla_seeds
+##
+##    - name: Check if RBNO is enabled
+##
+##    - name: If the node is accessible, check if it is down
+##
+##    - name: Check if all the other nodes are up
+##
+##    - name: Cut inbound and outbound network traffic for the dead node and from all the other nodes to the dead node as well
+##
+##    - name: Double check that only the expected nodes are down
+##
+##    - name: Run update with replace_address_first_boot set in the new node and remember to pass a big timeout. Also remember to pass one of the alive nodes as seed
+##
+##    - name: Remove replace_address_first_boot
+##
+##    - name: If RBNO is disabled, run repair
 #
-#    - name: Check if RBNO is enabled
 #
-#    - name: If the node is accessible, check if it is down
-#
-#    - name: Check if all the other nodes are up
-#
-#    - name: Cut inbound and outbound network traffic for the dead node and from all the other nodes to the dead node as well
-#
-#    - name: Double check that only the expected nodes are down
-#
-#    - name: Run update with replace_address_first_boot set in the new node and remember to pass a big timeout. Also remember to pass one of the alive nodes as seed
-#
-#    - name: Remove replace_address_first_boot
-#
-#    - name: If RBNO is disabled, run repair
-
-
 ---
 - name: Add Scylla without starting
   hosts: scylla
@@ -27,16 +27,24 @@
   vars:
     start_scylla_service: false
   tasks:
+    - name: Resolve a scylla_listen_address as a fact
+      set_fact:
+        listen_address: "{{ scylla_listen_address }}"
+
+    - name: Resolve scylla_broadcast_address as a fact
+      set_fact:
+        broadcast_address: "{{ scylla_broadcast_address }}"
+
     - name: Check if CQL port is up on {{ hostvars[replaced_node]['listen_address'] }}
       wait_for:
         port: 9042
         host: "{{ hostvars[replaced_node]['listen_address'] }}"
-        timeout: 60
+        timeout: 5
       register: _wait_for_cql_port_output
       ignore_errors: true
       delegate_to: "{{ replaced_node }}"
       run_once: true
-      when: _replaced_node_accessible | bool
+      #when: _replaced_node_accessible | bool
 
     # FIXME: Here we should validate that either the node is inaccessible or accessible with scylla down
     - debug:
@@ -47,7 +55,7 @@
         port: 9042
         host: "{{ listen_address }}"
         timeout: 60
-      when: inventory_hostname != replaced_node and inventory_hostname not in ignored_nodes
+      when: inventory_hostname != replaced_node and inventory_hostname != new_node
 
     # iptables -A INPUT -s [IP] -j DROP
     - name: Blacklist replaced node's broadcast_address to prevent it from trying to join the cluster again
@@ -63,23 +71,84 @@
         source: "{{ hostvars[replaced_node]['listen_address'] }}"
         jump: DROP
       when: inventory_hostname != replaced_node
-#  roles:
-#    - ansible-scylla-node
 
+    # FIXME: Make sure this will work even if the dead node is the first of the list
+    - name: Define any of the alive nodes as a seed
+      set_fact:
+        temporary_seed: "{{ hostvars[item]['listen_address'] }}"
+      when: item != replaced_node and item != new_node
+      loop: "{{ ansible_play_hosts_all }}"
+      run_once: true
 
-#- name: Start scylla services
-#  # new_node should be the IP of the node that comes into the cluster. The node being replaced should be in `replaced_node` variable below
-#  hosts: new_node
-#  become: true
-#
-#  tasks:
-#    - name: start scylla
-#      service:
-#        name: scylla-server
-#        state: started
-#      become: true
-#      ignore_errors: true
-#      #TODO: remove ignore_errors when ansible is bumped to 2.10.4 or 2.9.16 as per https://github.com/ansible/ansible/issues/71528
+- name: Add Scylla without starting2
+  hosts: "{{ new_node }}"
+  become: true
+  roles:
+    - ansible-scylla-node
+
+- name: Start scylla services
+  # new_node should be the IP of the node that comes into the cluster. The node being replaced should be in `replaced_node` variable below
+  hosts: "{{ new_node }}"
+  become: true
+  tasks:
+    #- name: Get the host id for all nodes
+    #  uri:
+    #    url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/storage_service/host_id"
+    #    method: GET
+    #  register: _host_ids
+    #  until: _host_ids.status == 200
+    #  retries: 5
+    #  delay: 1
+    #  delegate_to: "{{ temporary_seed }}"
+
+    #- set_fact:
+    #    _replaced_node_host_id: "{{ item.value }}"
+    #  when: item.key == replaced_node
+    #  loop: "{{ _host_ids.json }}"
+
+    #- name: Set replace_node_first_boot
+    #  lineinfile:
+    #    path: /etc/scylla/scylla.yaml
+    #    regexp: '^(#\s*)?replace_node_first_boot:'
+    #    line: "replace_node_first_boot: {{ _replaced_node_host_id }}"
+    #    create: yes
+
+    - name: Set replace_address_first_boot
+      lineinfile:
+        path: /etc/scylla/scylla.yaml
+        regexp: '^(#\s*)?replace_address_first_boot:'
+        line: "replace_address_first_boot: {{ replaced_node }}"
+        create: yes
+
+    - name: Start Scylla
+      service:
+        name: scylla-server
+        state: started
+
+    - name: Wait for CQL port on {{ listen_address }}
+      wait_for:
+        port: 9042
+        host: "{{ listen_address }}"
+        timeout: "{{ scylla_bootstrap_wait_time_sec }}"
+
+    - name: Remove the replace_address_first_boot record
+      lineinfile:
+        path: /etc/scylla/scylla.yaml
+        regexp: '^replace_address_first_boot:'
+        state: absent
+
+#    - name: Remove the replace_node_first_boot record
+#      lineinfile:
+#        path: /etc/scylla/scylla.yaml
+#        regexp: '^replace_node_first_boot:'
+#        state: absent
+
+#    # By default waits at most 7 hours for a node to start - bootstrapping and the corresponding streaming can take quite long
+#    - name: Wait for CQL port on {{ listen_address }}
+#      wait_for:
+#        port: 9042
+#        host: "{{ listen_address }}"
+#        timeout: "{{ scylla_bootstrap_wait_time_sec }}"
 #
 #    - name: wait for the cluster to become healthy
 #      shell: |
@@ -99,6 +168,3 @@
 #    - name: run nodetool repair -pr
 #      shell: |
 #        nodetool repair -pr
-#
-#
-#
