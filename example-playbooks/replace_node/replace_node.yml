@@ -18,8 +18,6 @@
 ##    - name: Remove replace_address_first_boot
 ##
 ##    - name: If RBNO is disabled, run repair
-#
-#
 
 ---
 - name: Prepare nodes before replacement
@@ -189,9 +187,21 @@
     - name: Repair all keyspaces
       block:
         - name: Get list of keyspaces
+          uri:
+            url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/storage_service/keyspaces"
+            method: GET
+          register: _keyspaces
+          until: _keyspaces.status == 200
+          retries: 5
+          delay: 1
 
-      when: enable_rbno_grep.failed or _rbno_enabled == false or rbno_allowed_for_replace == false 
+        - debug:
+            msg: "{{ item }}"
+          loop: "{{ _keyspaces.json }}"
 
-#    - name: run nodetool repair -pr
-#      shell: |
-#        nodetool repair -pr
+        - name: Repair all keyspaces
+          include_tasks: "../../../roles/ansible-scylla-node/tasks/repair.yml"
+          vars:
+            keyspaces: "{{ _keyspaces.json }}"
+            repair_timeout_seconds: 36000
+      when: enable_rbno_grep.failed or _rbno_enabled == false or rbno_allowed_for_replace == false

@@ -59,4 +59,4 @@
 - name: Run repair
   include_tasks: repair.yml
   vars:
-    keyspace: '{{ _keyspace }}'
+    keyspaces: '{{ _keyspace | list }}'
