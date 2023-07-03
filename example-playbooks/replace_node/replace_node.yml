@@ -2,8 +2,6 @@
 - name: Prepare nodes before replacement
   hosts: scylla
   become: true
-  vars:
-    start_scylla_service: false
   tasks:
     - name: Resolve a scylla_listen_address as a fact
       set_fact:
@@ -61,6 +59,8 @@
 - name: Install Scylla in the new node
   hosts: "{{ new_node }}"
   become: true
+  vars:
+    start_scylla_service: false
   roles:
     - ansible-scylla-node
 
@@ -173,10 +173,6 @@
           until: _keyspaces.status == 200
           retries: 5
           delay: 1
-
-        - debug:
-            msg: "{{ item }}"
-          loop: "{{ _keyspaces.json }}"
 
         - name: Repair all keyspaces
           include_tasks: "../../../roles/ansible-scylla-node/tasks/repair.yml"
