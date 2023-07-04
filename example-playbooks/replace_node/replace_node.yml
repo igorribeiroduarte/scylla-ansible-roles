@@ -162,20 +162,37 @@
               {% if (_scylla_yaml_map.allowed_repair_based_node_ops is not defined or 'replace' in _scylla_yaml_map.allowed_repair_based_node_ops) %}True{% else %}False{% endif %}
       when: _enable_rbno_grep.failed == false
 
-    - name: Repair all keyspaces
-      block:
-        - name: Get list of keyspaces
-          uri:
-            url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/storage_service/keyspaces"
-            method: GET
-          register: _keyspaces
-          until: _keyspaces.status == 200
-          retries: 5
-          delay: 1
+- name: Repair the new node, if necessary
+  hosts: scylla-manager
+  become: true
+  tasks:
+    # FIXME: Remember to test this
+    - name: Skip this playbook if RBNO was used for the replacement
+      meta: end_host
+      when: hostvars[new_node]['_enable_rbno_grep'].failed == false and hostvars[new_node]['_rbno_enabled'] and hostvars[new_node]['_rbno_allowed_for_replace']
 
-        - name: Repair all keyspaces
-          include_tasks: "../../../roles/ansible-scylla-node/tasks/repair.yml"
-          vars:
-            keyspaces: "{{ _keyspaces.json }}"
-            repair_timeout_seconds: 36000
-      when: _enable_rbno_grep.failed or _rbno_enabled == false or _rbno_allowed_for_replace == false
+    - name: Get cluster id
+      shell: |
+        sctool status | grep 'Cluster: {{ scylla_cluster_name }} ' | awk '{print $3}' | tr -d '()'
+      register: _cluster_id
+
+    - fail:
+        msg: "Unable to find cluster {{ scylla_cluster_name }} in scylla-manager"
+      when: _cluster_id.stdout|length == 0
+
+    - name: Repair the new node
+      shell: |
+        sctool repair --cluster "{{ _cluster_id.stdout }}" --host "{{ new_node }}"
+      register: _repair_id
+
+    - name: Wait for the repair to finish
+      shell:
+        sctool progress "{{ _repair_id.stdout }}" --cluster "{{ _cluster_id.stdout }}" | grep "Status:" | awk '{print $2}'
+      register: _repair_status
+      until: _repair_status.stdout != "RUNNING"
+      retries: "{{ repair_timeout_seconds|int // 30 }}" # retries = repair_timeout_seconds / delay
+      delay: 30
+
+    - fail:
+        msg: "Repair failed!"
+      when: _repair_status.stdout != "DONE"
