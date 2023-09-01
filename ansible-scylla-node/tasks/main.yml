@@ -8,15 +8,15 @@
   package_facts:
     manager: auto
 
-# Upgrade
-- name: Upgrade Scylla
-  include_tasks: upgrade/main.yml
-  when: upgrade_version
-
-# Install
-- name: os-specific tasks
-  include_tasks: "{{ ansible_os_family }}.yml"
-  when: not upgrade_version
+## Upgrade
+#- name: Upgrade Scylla
+#  include_tasks: upgrade/main.yml
+#  when: upgrade_version
+#
+## Install
+#- name: os-specific tasks
+#  include_tasks: "{{ ansible_os_family }}.yml"
+#  when: not upgrade_version
 
 - name: common tasks
   include_tasks: common.yml

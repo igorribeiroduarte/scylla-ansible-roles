@@ -183,10 +183,10 @@
       scylla_bootparam_setup
     when: scylla_bootparam_setup.stat.exists
 
-  - name: set up coredump
-    shell: |
-      scylla_coredump_setup --dump-to-raiddir
-    when: skip_coredump is defined and skip_coredump|bool == false
+  #- name: set up coredump
+  #  shell: |
+  #    scylla_coredump_setup --dump-to-raiddir
+  #  when: skip_coredump is defined and skip_coredump|bool == false
 
   - name: set up swap
     shell: |
