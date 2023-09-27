@@ -1,5 +1,41 @@
 ---
 
+- name: Check if local files exist
+  stat:
+    path: "{{ item }}"
+  loop: "{{ q('fileglob', 'scyllad_path/*') }}"
+  #loop: "{{ lookup('fileglob', '{scyllad_path}/*', wantlist=True) }}"
+  delegate_to: localhost
+  register: _localhost_scyllad_files
+  run_once: true
+
+- name: Check if remote files exist
+  stat:
+    path: "{{ item }}"
+  loop: "{{ q('fileglob', 'scyllad_path/*') }}"
+  delegate_to: localhost
+  register: _remote_scyllad_files
+  run_once: true
+
+- fail:
+    msg: "This node already has file {{ item }}"
+  loop: localhost_scyllad_files
+  when:
+    - item.stat.exists|bool and _ 
+
+- name: Copy scylla_d files
+  copy:
+    src: "{{ scyllad_files_local_path }}"
+    dest: /etc/scylla.d/
+    owner: root
+    group: root
+    # FIXME: Check if mode is correct
+    mode: '0644'
+  become: true
+  when: not upgrade_scylla|bool or update_scyllad_files|bool
+
+
+
 - name: Deactivate firewall
   block:
     - name: Deactivate front-end firewall services
