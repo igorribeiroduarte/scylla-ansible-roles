@@ -11,6 +11,20 @@
 #  true: check for upgrades and apply them
 upgrade_version: false
 
+set_nic_and_disks: true
+set_clocksource: true
+
+scylla_state_files:
+  - ['{{ inventory_dir }}/cpuset.conf', '/etc/scyllad/cpuset.conf']
+  - ['{{ inventory_dir }}/dev-mode.conf', '/etc/scyllad/dev-mode.conf']
+  - ['{{ inventory_dir }}/io.conf', '/etc/scyllad/io.conf']
+  - ['{{ inventory_dir }}/io_properties.yaml', '/etc/scyllad/io_properties.yaml']
+  - ['{{ inventory_dir }}/memory.conf', '/etc/scyllad/memory.conf']
+  - ['{{ inventory_dir }}/perftune.yaml', '/etc/scyllad/perftune.yaml']
+  - ['{{ inventory_dir }}/scylla-server', '/etc/default/scylla-server']
+
+override_scylla_state_files: false
+
 # Defines if the upgrade is 'major' or 'minor' (patch)
 # Values:
 #  [default] false: 'minor' upgrade
