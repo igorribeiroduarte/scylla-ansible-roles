@@ -242,9 +242,15 @@
       scylla_fstrim_setup
     notify: Enable and start 'scylla-fstrim.timer' service
 
+  - set_fact:
+      set_nic_and_disks_arg: {% if set_nic_and_disks|bool %}--setup-nic-and-disks{% else %}{% endif %}
+
+  - set_fact:
+      set_clocksource_arg: {% if set_clocksource|bool %}--set-clocksource{% else %}{% endif %}
+
   - name: configure sysconfig
     shell: |
-      scylla_sysconfig_setup --set-clocksource --setup-nic-and-disks --nic {{ scylla_nic }}
+      scylla_sysconfig_setup {{ set_clocksource_arg }} {{ nic_and_disks_arg }} --nic {{ scylla_nic }}
     when: skip_sysconfig is defined and skip_sysconfig|bool == false
   become: true
 
