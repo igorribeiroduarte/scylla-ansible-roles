@@ -272,23 +272,35 @@
     remote_key_path: "{{ table_key_directory }}"
   when: handle_table_keys|bool
 
-# scylla_listen_address is a composite indirect value that depends on another per-host value - scylla_nic.
-# Therefore in order to be able to get the corresponding value via hostvars[item] later in the play we need to
-# have an actual value resolved.
-# One way to do that is to resolve it and store as an Ansible fact.
-- name: Resolve a scylla_listen_address as a fact
-  set_fact:
-    listen_address: "{{ scylla_listen_address }}"
+# FIXME: Move this to main.yml
+- name: Gather facts
+  setup:
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  loop: "{{ groups['scylla'] }}"
+  run_once: true
 
-# The same relates to the below
-- name: Resolve scylla_rpc_address
+# We need addresses for all the nodes in the scylla section,
+# even the ones that are not part of 'play_hosts'
+- name: Resolve listen_address_nic as a fact
   set_fact:
-    rpc_address: "{{ scylla_rpc_address }}"
+    listen_address_nic: "{{ scylla_listen_address_nic }}"
+    broadcast_address_nic: "{{ scylla_listen_address_nic }}"
+    rpc_address_nic: "{{ scylla_listen_address_nic }}"
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  loop: "{{ groups['scylla'] }}"
+  run_once: true
 
-# The same relates to the below
-- name: Resolve scylla_broadcast_address
+- name: Resolve listen_address, broadcast_address and rpc_address as facts
   set_fact:
-    broadcast_address: "{{ scylla_broadcast_address }}"
+    listen_address: "{{ hostvars[item]['ansible_'~hostvars[item]['listen_address_nic']].ipv4.address }}"
+    broadcast_address: "{{ hostvars[item]['ansible_'~hostvars[item]['broadcast_address_nic']].ipv4.address }}"
+    rpc_address: "{{ hostvars[item]['ansible_'~hostvars[item]['rpc_address_nic']].ipv4.address }}"
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  loop: "{{ groups['scylla'] }}"
+  run_once: true
 
 - name: start_scylla_service dependent tasks
   block:
@@ -300,7 +312,7 @@
     - name: Start seeders serially
       run_once: true
       include_tasks: start_one_node.yml
-      loop: "{{ groups['scylla'] }}"
+      loop: "{{ play_hosts }}"
       when: hostvars[item]['broadcast_address'] in scylla_seeds or item in scylla_seeds
 
     - name: Start scylla non-seeds nodes serially

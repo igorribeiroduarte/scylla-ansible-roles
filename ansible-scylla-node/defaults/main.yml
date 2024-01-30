@@ -246,6 +246,15 @@ io_conf: 'SEASTAR_IO="--io-properties-file /etc/scylla.d/io_properties.yaml"'
 scylla_seeds:
   - "{{ groups['scylla'][0] }}"
 
+scylla_listen_address_nic: "{{ ansible_default_ipv4.interface }}"
+scylla_broadcast_address_nic: "{{ ansible_default_ipv4.interface }}"
+scylla_rpc_address_nic: "{{ ansible_default_ipv4.interface }}"
+
+# FIXME: Probably remove these lines, but double check where they're being used first
+
+# Would the below work? Probably
+#scylla_listen_address: "{{ ansible_default_ipv4.interface.ipv4.address }}"
+
 scylla_listen_address: "{{ vars['ansible_'~scylla_nic].ipv4.address }}"
 scylla_rpc_address: "{{ vars['ansible_'~scylla_nic].ipv4.address }}"
 scylla_broadcast_address: "{{ vars['ansible_'~scylla_nic].ipv4.address }}"
