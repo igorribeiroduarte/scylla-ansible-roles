@@ -77,4 +77,4 @@
   when: item[0].split('=')[0] == hostvars[item[1]]['broadcast_address']
   with_nested:
     - "{{ _new_tokens.stdout_lines }}"
-    - "{{ groups['scylla'] }}"
+    - "{{ play_hosts }}"
