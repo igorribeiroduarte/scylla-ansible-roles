@@ -21,7 +21,7 @@
 - name: Prepare per DC replication_factor list
   set_fact:
     dcs_to_rf: "{{ dcs_to_rf | default([]) + [\"'\" + hostvars[item]['_datacenter_out'].json + \"':\" + _keyspace_rf|string] }}"
-  loop: "{{ play_hosts }}"
+  loop: "{{ groups['scylla'] }}"
   run_once: true
 
 - set_fact:
