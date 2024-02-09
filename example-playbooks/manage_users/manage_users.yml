@@ -89,7 +89,7 @@
         admin_username: "{{ scylla_admin_username }}"
         admin_password: "{{ scylla_admin_password }}"
         username: "{{ item.key }}"
-        password: "{{ lookup('ini', item.key, section='cql_credentials', allow_no_value=true, default=omit, file=inventory_file) }}"
+        password: "{{ lookup('ini', item.key, section='cql_credentials', allow_no_value=true, default=omit, file=iv_used) }}"
         permissions: "{{ item.value.permissions }}"
       loop: "{{ internal_users | dict2items }}"
       run_once: true
