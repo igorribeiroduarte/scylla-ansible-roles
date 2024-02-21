@@ -416,6 +416,7 @@
   loop: "{{ groups['scylla'] }}"
   run_once: true
 
+# FIXME: I shouldn't be using groups here either
 - name: Check if all nodes are up
   uri:
     url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/failure_detector/endpoints/"
