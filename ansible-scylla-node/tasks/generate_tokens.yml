@@ -1,4 +1,29 @@
 ---
+- name: Gather facts
+  setup:
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  loop: "{{ groups['scylla'] }}"
+  run_once: true
+
+- name: Resolve listen_address_nic as a fact
+  set_fact:
+    listen_address_nic: "{{ scylla_listen_address_nic }}"
+    broadcast_address_nic: "{{ scylla_listen_address_nic }}"
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  loop: "{{ groups['scylla'] }}"
+  run_once: true
+
+- name: Resolve listen_address and broadcast_address as a fact
+  set_fact:
+    listen_address: "{{ hostvars[item]['ansible_'~hostvars[item]['listen_address_nic']].ipv4.address }}"
+    broadcast_address: "{{ hostvars[item]['ansible_'~hostvars[item]['broadcast_address_nic']].ipv4.address }}"
+  delegate_to: "{{ item }}"
+  delegate_facts: true
+  loop: "{{ groups['scylla'] }}"
+  run_once: true
+
 - name: Find the first node which is already bootstrapped, if any
   wait_for:
     port: 9042
@@ -77,4 +102,4 @@
   when: item[0].split('=')[0] == hostvars[item[1]]['broadcast_address']
   with_nested:
     - "{{ _new_tokens.stdout_lines }}"
-    - "{{ groups['scylla'] }}"
+    - "{{ play_hosts }}"
