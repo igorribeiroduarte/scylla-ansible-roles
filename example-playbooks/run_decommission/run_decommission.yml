@@ -51,15 +51,20 @@
         failed_when: "'DECOMMISSIONED' not in node_decommission_status.json"
       any_errors_fatal: true
 
-    - name: Post-decomission actions
-      block:
-      - name: Stop and disable scylla-server service
-        ansible.builtin.service:
-          name: scylla-server
-          state: stopped
-          enabled: no
-      - name: Shutdown the instance
-        ansible.builtin.shell: shutdown -h now
-        when: instace_poweroff
-      become: true
-
+#    - name: Post-decomission actions
+#      block:
+#      - name: Stop and disable scylla-server service
+#        ansible.builtin.service:
+#          name: scylla-server
+#          state: stopped
+#          enabled: no
+#      - name: Stop and disable node exporter
+#        ansible.builtin.service:
+#          name: scylla-node-exporter
+#          state: stopped
+#          enabled: no
+#      - name: Shutdown the instance
+#        ansible.builtin.shell: shutdown -h now
+#        when: instace_poweroff
+#      become: true
+#
