@@ -7,7 +7,7 @@
   register: wait_for_cql_port_output
   ignore_errors: true
   delegate_to: "{{ item }}"
-  loop: "{{ groups['scylla'] }}"
+  loop: "{{ ansible_play_hosts_all }}"
   when: wait_for_cql_port_output is not defined or wait_for_cql_port_output.failed == True
 
 - name: Set the already bootstrapped node as a fact, if any
@@ -21,7 +21,7 @@
     node_list: "{{ node_list | default([]) + [hostvars[item]['broadcast_address']] }}"
     rack_list: "{{ rack_list | default([]) + [hostvars[item]['rack']] }}"
     dc_list: "{{ dc_list | default([]) + [hostvars[item]['dc'] + hostvars[item]['dc_suffix'] | default('')] }}"
-  loop: "{{ groups['scylla'] }}"
+  loop: "{{ ansible_play_hosts_all }}"
 
 - name: Create a temporary tokens file
   tempfile:
@@ -40,7 +40,7 @@
       retries: 5
       delay: 1
       delegate_to: "{{ bootstrapped_node }}"
-      loop: "{{ groups['scylla'] }}"
+      loop: "{{ ansible_play_hosts_all }}"
 
     - name: Copy tokens to tmp file
       lineinfile:
@@ -77,4 +77,4 @@
   when: item[0].split('=')[0] == hostvars[item[1]]['broadcast_address']
   with_nested:
     - "{{ _new_tokens.stdout_lines }}"
-    - "{{ groups['scylla'] }}"
+    - "{{ ansible_play_hosts_all }}"
