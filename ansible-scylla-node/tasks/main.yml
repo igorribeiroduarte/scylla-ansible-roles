@@ -1,4 +1,9 @@
 ---
+- name: Check if all nodes are being handled
+  fail:
+    msg: "Make sure you set full_inventory to false if you're running the role for a subset of nodes. Be aware that this is not recommended, since tasks that require the full inventory will be skipped in such case."
+  when: full_inventory|bool and groups['scylla'] | sort() != play_hosts|sort()
+  run_once: true
 
 # Facts gathering
 - name: Populate service facts
