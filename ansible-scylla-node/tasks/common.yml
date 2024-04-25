@@ -323,7 +323,7 @@
     - name: Generate tokens for the new nodes
       run_once: true
       include_tasks: generate_tokens.yml
-      when: token_distributor is defined
+      when: use_dedicated_token_distributor|bool
 
     - name: Start seeders serially
       run_once: true
@@ -370,7 +370,7 @@
         regexp: '^initial_token:'
         line: ""
       become: true
-      when: token_distributor is defined
+      when: use_dedicated_token_distributor|bool
   when: start_scylla_service is defined and start_scylla_service|bool
 
 - name: Check if authentication and audit are enabled

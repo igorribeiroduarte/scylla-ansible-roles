@@ -446,9 +446,9 @@ swap_file_size_mb: 0
 #      in the same order as the nodes were provided.
 # --rf must be followed by a comma-separated list indicating the replication-factors for which the token ring should
 #      be optimized. Example: "dc1=3,dc2=2".
-# token_distributor:
-#   path: /path/too/token_distributor
-#   rf: us-east1=3,us-east2=2
+use_dedicated_token_distributor: false
+#token_distributor_path:
+#token_distributor_rf:
 
 # Default bootstrap timeout
 scylla_bootstrap_wait_time_sec: 25200
