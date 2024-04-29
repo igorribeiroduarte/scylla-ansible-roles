@@ -323,7 +323,7 @@
     - name: Generate tokens for the new nodes
       run_once: true
       include_tasks: generate_tokens.yml
-      when: use_dedicated_token_distributor|bool and full_inventory|bool
+      when: use_dedicated_token_distributor|bool
 
     - name: Start seeders serially
       run_once: true
@@ -360,7 +360,6 @@
           until: node_count.stdout|int == ansible_play_hosts_all|length
           retries: "{{ scylla_bootstrap_wait_time_sec|int }}"
           delay: 1
-      when: full_inventory|bool
 
     - name: check API access
       uri:
@@ -379,7 +378,7 @@
         line: ""
       become: true
       when: use_dedicated_token_distributor|bool
-  when: start_scylla_service is defined and start_scylla_service|bool
+  when: full_inventory|bool and start_scylla_service is defined and start_scylla_service|bool
 
 - name: Check if authentication and audit are enabled
   block:
