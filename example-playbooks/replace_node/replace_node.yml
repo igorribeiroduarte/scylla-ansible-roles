@@ -355,3 +355,9 @@
     - fail:
         msg: "Repair failed!"
       when: _repair_status.stdout != "DONE"
+
+
+- name: Wipe the replaced node
+  vars:
+    node_to_be_cleaned: "{{ replaced_node }}"
+  import_playbook: "../wipe_node/wipe_node.yml"
