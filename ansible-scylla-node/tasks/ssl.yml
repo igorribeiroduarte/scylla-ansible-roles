@@ -78,35 +78,73 @@
   delegate_to: localhost
   run_once: true
 
-- name: Generate keys signed by the local CA
+- name: Generate CSR
   block:
     - name: Create a directory for the key
       file:
-        path: "{{ _localhost_cert_path }}/ssl/{{ inventory_hostname }}"
+        path: "{{ scylla_ssl.localhost_node_cert_path }}"
         state: directory
       delegate_to: localhost
 
     - name: Generate an OpenSSL private key.
       openssl_privatekey:
-        path: "{{ _localhost_cert_path }}/ssl/{{ inventory_hostname }}/{{ inventory_hostname }}.pem"
+        path: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.pem"
       delegate_to: localhost
 
     - name: Generate an OpenSSL Certificate Signing Request
       openssl_csr:
-        path: "{{ _localhost_cert_path }}/ssl/{{ inventory_hostname }}/{{ inventory_hostname }}.csr"
-        privatekey_path: "{{ _localhost_cert_path }}/ssl/{{ inventory_hostname }}/{{ inventory_hostname }}.pem"
-        common_name: "{{ inventory_hostname }}.{{ scylla_cluster_name }}.internal"
-      delegate_to: localhost
-
-    - name: Generate an OpenSSL certificate signed with our CA certificate
-      openssl_certificate:
-        path: "{{ _localhost_cert_path }}/ssl/{{ inventory_hostname }}/{{ inventory_hostname }}.crt"
-        csr_path: "{{ _localhost_cert_path }}/ssl/{{ inventory_hostname }}/{{ inventory_hostname }}.csr"
-        ownca_path: "{{ _localhost_cert_path }}/ssl/ca/{{scylla_cluster_name }}-ca.crt"
-        ownca_privatekey_path: "{{ _localhost_cert_path }}/ssl/ca/{{ scylla_cluster_name }}-ca.pem"
-        provider: ownca
+        path: "{{ localhost_node_cert_path }}/scylla.csr"
+        privatekey_path: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.pem"
+        common_name: "{{ scylla_ssl.common_name }}"
       delegate_to: localhost
   when: _crt_and_key_exist == False
+
+
+- name: Generate an OpenSSL certificate signed with our CA certificate
+  openssl_certificate:
+    path: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.crt"
+    csr_path: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.csr"
+    ownca_path: "{{ _localhost_cert_path }}/ssl/ca/{{scylla_cluster_name }}-ca.crt"
+    ownca_privatekey_path: "{{ _localhost_cert_path }}/ssl/ca/{{ scylla_cluster_name }}-ca.pem"
+    provider: ownca
+  delegate_to: localhost
+  when: scylla_ssl.use_valid_ca is not defined or scylla_ssl.use_valid_ca|bool == false
+
+- name: Use ACME account for signing the certificates
+  block:
+    - name: Create a DNS-01 challenge 
+      account_key_src: "{{ scylla_ssl.acme_account_key }}"
+      account_email: "{{ acme_account_email }}"
+      src: {{ scylla_ssl.localhost_node_cert_path }}/scylla.csr
+      cert: {{ scylla_ssl.localhost_node_cert_path }}/scylla.crt
+      challenge: dns-01
+      acme_directory: https://acme-v01.api.letsencrypt.org/directory
+      # Renew if the certificate is at least 30 days old
+      remaining_days: 60
+  when: scylla_ssl.use_valid_ca is defined and scylla_ssl.use_valid_ca|bool
+
+
+
+
+
+- name: Get ACME challenge
+    acme_certificate:
+      account_email: "{{cert.email_address}}"
+      account_key: "{{tempdir.path}}/letsencrypt_account.pem"
+      acme_directory: "{{acme_directory}}"
+      acme_version: 2
+      challenge: dns-01
+      chain_dest:  "{{tempdir.path}}/intermediate.pem"
+      csr: "{{tempdir.path}}/{{cert_name}}.csr"
+      dest: "{{tempdir.path}}/{{cert_name}}.cert"
+      terms_agreed: yes
+      remaining_days: "{{remaining_days}}"
+    register: acme_data
+
+
+
+
+
 
 - name: Copy the certificates into their proper locations
   copy:
