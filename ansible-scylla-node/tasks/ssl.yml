@@ -93,7 +93,7 @@
 
     - name: Generate an OpenSSL Certificate Signing Request
       openssl_csr:
-        path: "{{ localhost_node_cert_path }}/scylla.csr"
+        path: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.csr"
         privatekey_path: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.pem"
         common_name: "{{ scylla_ssl.common_name }}"
       delegate_to: localhost
@@ -113,56 +113,51 @@
 - name: Use ACME account for signing the certificates
   block:
     - name: Create a DNS-01 challenge 
-      account_key_src: "{{ scylla_ssl.acme_account_key }}"
-      account_email: "{{ acme_account_email }}"
-      src: {{ scylla_ssl.localhost_node_cert_path }}/scylla.csr
-      cert: {{ scylla_ssl.localhost_node_cert_path }}/scylla.crt
-      challenge: dns-01
-      acme_directory: https://acme-v01.api.letsencrypt.org/directory
-      # Renew if the certificate is at least 30 days old
-      remaining_days: 60
+      acme_certificate:
+        acme_version: 2
+        account_key_src: "{{ scylla_ssl.acme_account_key }}"
+        account_email: "{{ scylla_ssl.acme_account_email }}"
+        src: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.csr"
+        cert: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.crt"
+        challenge: dns-01
+        acme_directory: https://acme-staging-v02.api.letsencrypt.org/directory
+        terms_agreed: yes
+        #acme_directory: https://acme-v01.api.letsencrypt.org/directory
+        # Renew if the certificate is at least 30 days old
+        remaining_days: 30
+      register: dns_challenge
   when: scylla_ssl.use_valid_ca is defined and scylla_ssl.use_valid_ca|bool
-
-
-
-
-
-- name: Get ACME challenge
-    acme_certificate:
-      account_email: "{{cert.email_address}}"
-      account_key: "{{tempdir.path}}/letsencrypt_account.pem"
-      acme_directory: "{{acme_directory}}"
-      acme_version: 2
-      challenge: dns-01
-      chain_dest:  "{{tempdir.path}}/intermediate.pem"
-      csr: "{{tempdir.path}}/{{cert_name}}.csr"
-      dest: "{{tempdir.path}}/{{cert_name}}.cert"
-      terms_agreed: yes
-      remaining_days: "{{remaining_days}}"
-    register: acme_data
-
-
-
-
-
-
-- name: Copy the certificates into their proper locations
-  copy:
-    src: "{{ item }}"
-    dest: "{{ scylla_ssl.cert_path }}/{{ item | basename }}"
-    owner: root
-    group: root
-    mode: '0644'
-  become: true
-  loop:
-    - "{{ _localhost_cert_path }}/ssl/ca/{{ scylla_cluster_name }}-ca.crt"
-    - "{{ _localhost_cert_path }}/ssl/{{ inventory_hostname }}/{{ inventory_hostname }}.crt"
-    - "{{ _localhost_cert_path }}/ssl/{{ inventory_hostname }}/{{ inventory_hostname }}.pem"
-
-- name: Generate cqlshrc
-  template:
-    src: templates/cqlshrc.j2
-    dest: "{{ _localhost_cert_path }}/cqlshrc"
   delegate_to: localhost
-  run_once: true
 
+- name: create a resource record set
+  gcp_dns_resource_record_set:
+    name: "{{ dns_challenge.challenge_data[scylla_ssl.common_name]['dns-01'].record }}."
+    #name: "node5.test.fe.ops.scylladb.com."
+    managed_zone: "{{ scylla_ssl.dns_zone }}"
+    type: TXT
+    ttl: 600
+    target:
+    - "{{ dns_challenge.challenge_data[scylla_ssl.common_name]['dns-01'].resource_value }}"
+    project: skilled-adapter-452
+    auth_kind: "application"
+    state: present
+  run_once: true
+  delegate_to: localhost
+  when: dns_challenge is changed and scylla_ssl.common_name in dns_challenge.challenge_data
+
+
+- name: Let the challenge be validated and retrieve the cert and intermediate certificate
+  acme_certificate:
+    acme_version: 2
+    account_key_src: "{{ scylla_ssl.acme_account_key }}"
+    account_email: "{{ scylla_ssl.acme_account_email }}"
+    src: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.csr"
+    cert: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.crt"
+    fullchain: "{{ scylla_ssl.localhost_node_cert_path }}/scylla-fullchain.crt"
+    chain: "{{ scylla_ssl.localhost_node_cert_path }}/scylla-intermediate.crt"
+    challenge: dns-01
+    acme_directory: https://acme-staging-v02.api.letsencrypt.org/directory
+    remaining_days: 30
+    data: "{{ dns_challenge }}"
+  when: scylla_ssl.use_valid_ca is defined and scylla_ssl.use_valid_ca|bool
+  delegate_to: localhost
