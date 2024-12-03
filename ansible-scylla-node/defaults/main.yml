@@ -60,7 +60,7 @@ upgrade_generate_snapshots: false
 upgrade_api_default_retries: 20
 
 # Defines how many seconds of delay should be applied between retries for API usage
-# Values:
+slv Values:
 #  [default] 15
 #  Any value above 0
 upgrade_api_default_delay: 15
@@ -274,6 +274,10 @@ scylla_yaml_params:
   authenticator: PasswordAuthenticator
   internode_compression: all
 
+#acme_account_key: "path/to/the/key"
+#acme_account_email: "email@example.com"
+#acme_renew_after_in_days: 30
+
 # SSL configuration for Scylla nodes:
 # localhost_cert_path is the path where the certificates will be stored in the localhost before they're coppied to the nodes. If not set,
 # the playbook will consider it to be the same path where the inventory is located.
@@ -288,14 +292,41 @@ scylla_yaml_params:
 # and place the .pem and .crt files as {{ hostname }}.pem and {{ hostname }}.crt respectively and then place the CA you used to sign the certificates in
 # ${localhost_cert_path}/ssl/ca/{{ scylla_cluster_name }}-ca.crt and its respective key in ${localhost_cert_path}/ssl/ca/{{ scylla_cluster_name }}-ca.pem.
 # To skip this configuration entirely, set enabled: false for both options or comment out the scylla_ssl variable.
+
+# FIXME: Define these defaults in the code as well, because since this is a dict in case the user
+# has an old version of the dict, everything will be overriden
 scylla_ssl:
-  # localhost_cert_path: path/to/certificates
   cert_path: /etc/scylla
+
+  localhost_cert_path: "{{ inventory_dir }}/ssl/{{ inventory_hostname }}"
+  localhost_ca_cert_path: "{{ inventor_dir }}/ssl/ca"
+
+  cert_filename: "{{ inventory_hostname }}"
+  cert_common_name: "{{ inventory_hostname }}"
+
+  ca_cert_filename: "{{ scylla_cluster_name }}-ca"
+
+  use_acme_ca: false
+
+  # If common_name is defined, let's have a single certificate and copy it to all nodes
+  # common_name: "*.igor-test-cert.test.fe.ops.scylladb.com"
+  # common_name: "{{ hostname }}.internal"
+  # localhost_cert_path: path/to/certificates
+  #node_cert_path: {{ cert_path }}/ssl/{{ hostname }}
+  #localhost_node_cert_path: {{ cert_path }}/{{ common_name }}
+  #localhost_node_cert_path: {{ _localhost_cert_path }}/ssl/{{ inventory_hostname }}
+  # use_valid_ca: true
+  # acme_account_key: /home/igor/fieldcloud-training/field-cloud/clusters/gcp/test-ansible-roles/ssl/10.142.0.120/10.142.0.120.pem
+  # acme_account_email: igor@sample.com 
   internode:
     enabled: true
     internode_encryption: all
   client:
     enabled: true
+
+#use_gcp_dns_provider: true
+#gcp_managed_dns_zone_name: your_zone_name
+#gcp_managed_dns_zone_dns_name: example_cluster.scylladb.com
 
 # Two types of encryption keys are available: System Keys and Table Keys.
 

@@ -4,60 +4,49 @@
 
 - name: For every node, check if crt file exists
   stat:
-    path: "{{ _localhost_cert_path }}/ssl/{{ hostvars[item]['inventory_hostname'] }}/{{ hostvars[item]['inventory_hostname'] }}.crt"
+    path: "{{ localhost_cert_path }}/{{ scylla_ssl.cert_filename }}.crt"
   register: _node_crt
-  loop: "{{ groups['scylla'] }}"
   delegate_to: localhost
-  run_once: true
 
 - name: For every node, check if key file exists
   stat:
-    path: "{{ _localhost_cert_path }}/ssl/{{ hostvars[item]['inventory_hostname'] }}/{{ hostvars[item]['inventory_hostname'] }}.pem"
+    path: "{{ localhost_cert_path }}/{{ scylla_ssl.cert_filename }}.pem"
   register: _node_key
-  loop: "{{ groups['scylla'] }}"
   delegate_to: localhost
-  run_once: true
 
-- name: Set existence of crt and key as a single fact
-  set_fact:
-    _crt_and_key_exist: "{{ item.stat.exists }}"
-  loop: "{{ _node_crt.results + _node_key.results }}"
-  when: _crt_and_key_exist is not defined or _crt_and_key_exist == True
-  run_once: true
+# FIXME: You need to decide if it's ok to have certs without having CA or not
+# A weird situation would be if the user has a trustore registered in their application
+# but forgot to add it to the metadata. We would create a new truststore and use it for new nodes..
 
 - name: Check if CA exists
   block:
     - name: Check if CA crt file exists
       stat:
-        path: "{{ _localhost_cert_path }}/ssl/ca/{{ scylla_cluster_name }}-ca.crt"
+        path: "{{ localhost_ca_cert_path }}/{{ scylla_ssl.ca_cert_filename }}.crt"
       register: _ca_crt
     - name: Check if CA key file exists
       stat:
-        path: "{{ _localhost_cert_path }}/ssl/ca/{{ scylla_cluster_name }}-ca.pem"
+        path: "{{ localhost_ca_cert_path }}/{{ scylla_ssl.ca_cert_filename }}.pem"
       register: _ca_key
     - set_fact:
         _ca_crt_and_key_exist: "{{ _ca_crt.stat.exists|bool and _ca_key.stat.exists|bool }}"
   delegate_to: localhost
   run_once: true
 
-- fail:
-    msg: "If you want to use your own node certificates you also have to provide a CA"
-  when: _crt_and_key_exist and not _ca_crt_and_key_exist
-
 - name: If crt and keys were not provided for all nodes and no CA was provided, generate a self-signed CA
   block:
     - name: Create dir for the CA
       file:
-        path: "{{ _localhost_cert_path }}/ssl/ca"
+        path: "{{ localhost_ca_cert_path }}"
         state: directory
 
     - name: Generate an OpenSSL private key for the CA.
       openssl_privatekey:
-        path: "{{ _localhost_cert_path }}/ssl/ca/{{ scylla_cluster_name }}-ca.pem"
+        path: "{{ localhost_ca_cert_path }}/{{ scylla_ssl.ca_cert_filename }}.pem"
 
     - name: Generate an OpenSSL Certificate Signing Request for the CA
       community.crypto.openssl_csr_pipe:
-        privatekey_path: "{{ _localhost_cert_path }}/ssl/ca/{{ scylla_cluster_name }}-ca.pem"
+        privatekey_path: "{{ localhost_ca_cert_path }}/{{ scylla_ssl.ca_cert_filename }}.pem"
         common_name: "{{ scylla_cluster_name }}.internal"
         use_common_name_for_san: false  # since we do not specify SANs, don't use CN as a SAN
         basic_constraints:
@@ -70,69 +59,74 @@
 
     - name: Generate a Self Signed OpenSSL certificate for the CA
       community.crypto.x509_certificate:
-        path: "{{ _localhost_cert_path }}/ssl/ca/{{scylla_cluster_name }}-ca.crt"
-        privatekey_path: "{{ _localhost_cert_path }}/ssl/ca/{{ scylla_cluster_name }}-ca.pem"
+        path: "{{ localhost_ca_cert_path }}/{{ scylla_ssl.ca_cert_filename }}.crt"
+        privatekey_path: "{{ localhost_ca_cert_path }}/{{ scylla_ssl.ca_cert_filename }}.pem"
         csr_content: "{{ ca_csr.csr }}"
         provider: selfsigned
-  when: _crt_and_key_exist == False and _ca_crt_and_key_exist == False
+  when: use_acme_ca|bool == False and _ca_crt_and_key_exist == False
   delegate_to: localhost
   run_once: true
 
 - name: Generate CSR
   block:
+    # FIXME: What happens if the dir already exists
     - name: Create a directory for the key
       file:
-        path: "{{ scylla_ssl.localhost_node_cert_path }}"
+        path: "{{ localhost_cert_path }}"
         state: directory
       delegate_to: localhost
 
     - name: Generate an OpenSSL private key.
       openssl_privatekey:
-        path: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.pem"
+        path: "{{ localhost_cert_path }}/{{ scylla_ssl.cert_filename }}.pem"
+      when: _node_key.exists == False
       delegate_to: localhost
 
     - name: Generate an OpenSSL Certificate Signing Request
       openssl_csr:
-        path: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.csr"
-        privatekey_path: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.pem"
-        common_name: "{{ scylla_ssl.common_name }}"
+        path: "{{ localhost_cert_path }}/{{ scylla_ssl.cert_filename }}.csr"
+        privatekey_path: "{{ localhost_cert_path }}/{{ scylla_ssl.cert_filename }}.pem"
+        common_name: "{{ scylla_ssl.cert_common_name }}"
       delegate_to: localhost
-  when: _crt_and_key_exist == False
-
+  when: use_acme_ca|bool == False
 
 - name: Generate an OpenSSL certificate signed with our CA certificate
   openssl_certificate:
-    path: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.crt"
-    csr_path: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.csr"
-    ownca_path: "{{ _localhost_cert_path }}/ssl/ca/{{scylla_cluster_name }}-ca.crt"
-    ownca_privatekey_path: "{{ _localhost_cert_path }}/ssl/ca/{{ scylla_cluster_name }}-ca.pem"
+    path: "{{ localhost_cert_path }}/{{ scylla_ssl.cert_filename }}/scylla.crt"
+    csr_path: "{{ localhost_cert_path }}/{{ scylla_ssl.cert_filename }}/scylla.csr"
+    ownca_path: "{{ localhost_ca_cert_path }}/{{ scylla_ssl.ca_cert_filename }}.crt"
+    ownca_privatekey_path: "{{ localhost_ca_cert_path }}/{{ scylla_ssl.ca_cert_filename }}.pem"
     provider: ownca
   delegate_to: localhost
-  when: scylla_ssl.use_valid_ca is not defined or scylla_ssl.use_valid_ca|bool == false
+  when:
+    - scylla_ssl.use_acme_ca is not defined or scylla_ssl.use_acme_ca|bool == false
+    - _node_crt.exists == False
 
+# FIXME: Move this to a separate task, since it'll be used twice
 - name: Use ACME account for signing the certificates
   block:
-    - name: Create a DNS-01 challenge 
+    - name: Create a DNS-01 challenge
       acme_certificate:
         acme_version: 2
-        account_key_src: "{{ scylla_ssl.acme_account_key }}"
-        account_email: "{{ scylla_ssl.acme_account_email }}"
+        account_key_src: "{{ acme_account_key }}"
+        account_email: "{{ acme_account_email }}"
         src: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.csr"
         cert: "{{ scylla_ssl.localhost_node_cert_path }}/scylla.crt"
         challenge: dns-01
+        #acme_directory: https://acme-v01.api.letsencrypt.org/directory
         acme_directory: https://acme-staging-v02.api.letsencrypt.org/directory
         terms_agreed: yes
-        #acme_directory: https://acme-v01.api.letsencrypt.org/directory
         # Renew if the certificate is at least 30 days old
-        remaining_days: 30
+        remaining_days: "{{ acme_renew_after_in_days|int }}"
       register: dns_challenge
-  when: scylla_ssl.use_valid_ca is defined and scylla_ssl.use_valid_ca|bool
+  when: scylla_ssl.use_acme_ca is defined and scylla_ssl.use_acme_ca|bool
   delegate_to: localhost
 
+# FIXME: Move this to a separate task that we'll include depending on the value of scylla_ssl.dns_provider
+# If it's GCP, then we'll include GCP task
 - name: create a resource record set
   gcp_dns_resource_record_set:
     name: "{{ dns_challenge.challenge_data[scylla_ssl.common_name]['dns-01'].record }}."
-    #name: "node5.test.fe.ops.scylladb.com."
     managed_zone: "{{ scylla_ssl.dns_zone }}"
     type: TXT
     ttl: 600
@@ -159,5 +153,5 @@
     acme_directory: https://acme-staging-v02.api.letsencrypt.org/directory
     remaining_days: 30
     data: "{{ dns_challenge }}"
-  when: scylla_ssl.use_valid_ca is defined and scylla_ssl.use_valid_ca|bool
+  when: scylla_ssl.use_acme_ca is defined and scylla_ssl.use_acme_ca|bool
   delegate_to: localhost
