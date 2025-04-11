@@ -27,7 +27,7 @@ galaxy_info:
 dependencies:
   - role: "ansible-scylla-node"
     vars:
-      scylla_version: 'latest'
+      scylla_version: "{{ scylla_manager_db_vars.scylla_version|default('latest') }}"
       install_only: true
       scylla_manager_enabled: false
       scylla_edition: "{{ scylla_manager_db_vars.scylla_edition|default('oss') }}"
