@@ -1,115 +1,115 @@
 ---
-# This play will make sure that the node being replaced is down and prevent it from trying to re-join
-# the cluster by blocking its ip via iptables.
-- name: Prepare nodes before replacement
-  hosts: scylla
-  any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
-  tasks:
-    - name: Resolve a scylla_listen_address as a fact
-      set_fact:
-        listen_address: "{{ alive_nodes_listen_address }}"
-
-    - name: Resolve scylla_broadcast_address as a fact
-      set_fact:
-        broadcast_address: "{{ alive_nodes_broadcast_address }}"
-
-    - name: "Check if the replaced node is in the seeds list"
-      fail:
-        msg: "The replaced node can't be a seed!"
-      when: replaced_node_broadcast_address in scylla_seeds or replaced_node in scylla_seeds
-      run_once: true
-
-    - name: Stop scylla-server on the node being replaced
-      block:
-        - name: Disable Scylla service
-          service:
-            name: scylla-server
-            enabled:  false
-          become: true
-
-        - name: Run nodetool drain
-          block:
-            - name: Async nodetool drain
-              async_task:
-                shell: |
-                  nodetool drain
-                alias: drain_scylla
-                async: 60
-                retries: 60
-                delay: 1
-              ignore_errors: true
-              register: _drain_scylla_output
-
-            - name: Cleanup job alias
-              shell: |
-                rm -rf "{{ _drain_scylla_output.alias_path }}"
-              when: _drain_scylla_output.failed
-
-        - name: Stop Scylla service
-          block:
-            - name: Async stop Scylla service
-              async_task:
-                shell: |
-                  systemctl stop scylla-server
-                alias: stop_scylla
-                async: 5
-                retries: 5
-                delay: 1
-              ignore_errors: true
-              register: _stop_scylla_output
-
-            - name: Cleanup job alias
-              shell: |
-                rm -rf "{{ _stop_scylla_output.alias_path }}"
-              when: _stop_scylla_output.failed
-          become: true
-
-        - name: Send SIGKILL to scylla
-          shell: |
-            pkill -9 scylla$
-          ignore_errors: true
-          become: true
-      delegate_to: "{{ replaced_node }}"
-      run_once: true
-      when: alive_node_replace is defined and alive_node_replace|bool
-
-    - name: Define temporary seed
-      set_fact:
-        temporary_seed: "{% if new_node == groups['scylla'][0] %}{{ groups['scylla'][1] }}{% else %}{{ groups['scylla'][0] }}{% endif %}"
-      run_once: true
-
-    - name: Check if CQL port is up on {{ replaced_node_broadcast_address }}
-      wait_for:
-        port: "{{ cql_port }}"
-        host: "{{ replaced_node_broadcast_address }}"
-        timeout: 60
-      register: _wait_for_cql_port_output
-      ignore_errors: true
-      delegate_to: "{{ temporary_seed }}"
-      run_once: true
-
-    - name: Validate that the node being replaced is down
-      fail:
-        msg: "The node {{ replaced_node }} must be down in order to be replaced!"
-      when: _wait_for_cql_port_output.failed|bool == false
-      run_once: true
-
-    - name: Check if the other nodes are UP
-      wait_for:
-        port: "{{ cql_port }}"
-        host: "{{ listen_address }}"
-        timeout: 60
-      when: inventory_hostname != new_node
-
-    - name: Block replaced node's broadcast_address to prevent it from trying to join the cluster again
-      iptables:
-        chain: INPUT
-        source: "{{ replaced_node_broadcast_address }}"
-        jump: DROP
-      become: true
-      when: block_replaced_node|bool
+## This play will make sure that the node being replaced is down and prevent it from trying to re-join
+## the cluster by blocking its ip via iptables.
+#- name: Prepare nodes before replacement
+#  hosts: scylla
+#  any_errors_fatal: true
+#  vars_files:
+#    - vars/main.yml
+#  tasks:
+#    - name: Resolve a scylla_listen_address as a fact
+#      set_fact:
+#        listen_address: "{{ alive_nodes_listen_address }}"
+#
+#    - name: Resolve scylla_broadcast_address as a fact
+#      set_fact:
+#        broadcast_address: "{{ alive_nodes_broadcast_address }}"
+#
+#    - name: "Check if the replaced node is in the seeds list"
+#      fail:
+#        msg: "The replaced node can't be a seed!"
+#      when: replaced_node_broadcast_address in scylla_seeds or replaced_node in scylla_seeds
+#      run_once: true
+#
+#    - name: Stop scylla-server on the node being replaced
+#      block:
+#        - name: Disable Scylla service
+#          service:
+#            name: scylla-server
+#            enabled:  false
+#          become: true
+#
+#        - name: Run nodetool drain
+#          block:
+#            - name: Async nodetool drain
+#              async_task:
+#                shell: |
+#                  nodetool drain
+#                alias: drain_scylla
+#                async: 60
+#                retries: 60
+#                delay: 1
+#              ignore_errors: true
+#              register: _drain_scylla_output
+#
+#            - name: Cleanup job alias
+#              shell: |
+#                rm -rf "{{ _drain_scylla_output.alias_path }}"
+#              when: _drain_scylla_output.failed
+#
+#        - name: Stop Scylla service
+#          block:
+#            - name: Async stop Scylla service
+#              async_task:
+#                shell: |
+#                  systemctl stop scylla-server
+#                alias: stop_scylla
+#                async: 5
+#                retries: 5
+#                delay: 1
+#              ignore_errors: true
+#              register: _stop_scylla_output
+#
+#            - name: Cleanup job alias
+#              shell: |
+#                rm -rf "{{ _stop_scylla_output.alias_path }}"
+#              when: _stop_scylla_output.failed
+#          become: true
+#
+#        - name: Send SIGKILL to scylla
+#          shell: |
+#            pkill -9 scylla$
+#          ignore_errors: true
+#          become: true
+#      delegate_to: "{{ replaced_node }}"
+#      run_once: true
+#      when: alive_node_replace is defined and alive_node_replace|bool
+#
+#    - name: Define temporary seed
+#      set_fact:
+#        temporary_seed: "{% if new_node == groups['scylla'][0] %}{{ groups['scylla'][1] }}{% else %}{{ groups['scylla'][0] }}{% endif %}"
+#      run_once: true
+#
+#    - name: Check if CQL port is up on {{ replaced_node_broadcast_address }}
+#      wait_for:
+#        port: "{{ cql_port }}"
+#        host: "{{ replaced_node_broadcast_address }}"
+#        timeout: 60
+#      register: _wait_for_cql_port_output
+#      ignore_errors: true
+#      delegate_to: "{{ temporary_seed }}"
+#      run_once: true
+#
+#    - name: Validate that the node being replaced is down
+#      fail:
+#        msg: "The node {{ replaced_node }} must be down in order to be replaced!"
+#      when: _wait_for_cql_port_output.failed|bool == false
+#      run_once: true
+#
+#    - name: Check if the other nodes are UP
+#      wait_for:
+#        port: "{{ cql_port }}"
+#        host: "{{ listen_address }}"
+#        timeout: 60
+#      when: inventory_hostname != new_node
+#
+#    - name: Block replaced node's broadcast_address to prevent it from trying to join the cluster again
+#      iptables:
+#        chain: INPUT
+#        source: "{{ replaced_node_broadcast_address }}"
+#        jump: DROP
+#      become: true
+#      when: block_replaced_node|bool
 
 
 # This play will install Scylla in the new node and update the existing ones.
@@ -123,294 +123,295 @@
   vars:
     firewall_enabled: true
   roles:
-    - ansible-scylla-node
+    - role: ansible-scylla-node
+      when: inventory_hostname not in dead_nodes_to_ignore
 
 
-- name: Update scylla-monitoring
-  hosts: scylla-monitor
-  any_errors_fatal: true
-  roles:
-    - ansible-scylla-monitoring
-
-
-- name: Temporarily suspend scylla-manager tasks
-  hosts: scylla-manager
-  any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
-  tasks:
-    - name: Suspend SM tasks on all configured clusters
-      shell: sctool --cluster="{{ item.cluster_name }}" suspend
-      loop: "{{ scylla_clusters }}"
-
-
-# This play will set the ip/host_id of the replaced node in the scylla.yaml of the new node,
-# start the new node, and then wait until the new node finishes joining the cluster. The same
-# variables used when the node role was executed for the replaced node should also be passed
-# to this playbook and will be used by this play.
-- name: Start Scylla in the new node
-  hosts: "{{ new_node }}"
-  any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
-  become: true
-  tasks:
-    - name: Get current seeds
-      shell: |
-        grep '\- seeds:' /etc/scylla/scylla.yaml | awk '{ print $NF }'
-      register: _current_seeds
-
-    - name: Save current seeds list as a fact
-      set_fact:
-        original_seeds: "{{ _current_seeds.stdout }}"
-
-    - name: Set temporary_seed as seed for the new node
-      lineinfile:
-        path: /etc/scylla/scylla.yaml
-        regexp: '^(\s+) - seeds:'
-        line: |
-          \g<1> - seeds: {{ hostvars[temporary_seed].broadcast_address }}
-        backrefs: yes
-
-    - name: Check if replace_node_first_boot is available in the current Scylla version
-      shell: |
-        scylla --help | grep replace-node-first-boot
-      register: _replace_node_first_boot_grep
-      ignore_errors: true
-
-    - name: Get the host id for all nodes
-      uri:
-        url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/storage_service/host_id"
-        method: GET
-      register: _host_ids
-      until: _host_ids.status == 200
-      retries: 5
-      delay: 1
-      delegate_to: "{{ temporary_seed }}"
-      run_once: true
-
-    - name: Set ignore_dead_nodes_for_replace using host ids
-      block:
-        - name: Set dead nodes host ids
-          set_fact:
-            _dead_nodes_host_ids: "{{ _dead_nodes_host_ids | default([]) + [item.value] }}"
-          when: item.key in dead_nodes_to_ignore
-          loop: "{{ _host_ids.json }}"
-
-        - name: Set ignore_dead_nodes_for_replace in scylla.yaml
-          lineinfile:
-            path: /etc/scylla/scylla.yaml
-            regexp: '^(#\s*)?ignore_dead_nodes_for_replace:'
-            line: "ignore_dead_nodes_for_replace: {{ _dead_nodes_host_ids | join(',')}}"
-            create: yes
-      when: dead_nodes_to_ignore|length > 0 and _replace_node_first_boot_grep.failed == false
-
-    # If the _replace_node_first_boot_grep failed, it means that in this scylla version we are still using
-    # addresses instead of host ids for replace, so let's set broadcast addresses in ignore_dead_nodes_for_replace
-    - name: Set ignore_dead_nodes_for_replace using addresses
-      lineinfile:
-        path: /etc/scylla/scylla.yaml
-        regexp: '^(#\s*)?ignore_dead_nodes_for_replace:'
-        line: "ignore_dead_nodes_for_replace: {{ dead_nodes_to_ignore | join(',')}}"
-        create: yes
-      when: dead_nodes_to_ignore|length > 0 and _replace_node_first_boot_grep.failed
-
-    - name: Set replace_node_first_boot
-      block:
-        - set_fact:
-            _replaced_node_host_id: "{{ item.value }}"
-          when: item.key == replaced_node or item.key == replaced_node_broadcast_address
-          loop: "{{ _host_ids.json }}"
-
-        - name: Set replace_node_first_boot
-          lineinfile:
-            path: /etc/scylla/scylla.yaml
-            regexp: '^(#\s*)?replace_node_first_boot:'
-            line: "replace_node_first_boot: {{ _replaced_node_host_id }}"
-            create: yes
-      when: _replace_node_first_boot_grep.failed == false
-
-    - name: Set replace_address_first_boot
-      lineinfile:
-        path: /etc/scylla/scylla.yaml
-        regexp: '^(#\s*)?replace_address_first_boot:'
-        line: "replace_address_first_boot: {{ replaced_node_broadcast_address }}"
-        create: yes
-      when: _replace_node_first_boot_grep.failed
-
-    - name: Check if RBNO is available in the current Scylla version
-      shell: |
-        scylla --help | grep enable-repair-based-node-ops
-      register: _enable_rbno_grep
-      ignore_errors: true
-
-    - name: Check if RBNO was enabled for node replacement
-      block:
-        - command: cat /etc/scylla/scylla.yaml
-          ignore_errors: true
-          register: _scylla_yaml_out
-
-        - set_fact:
-            _scylla_yaml_map: "{{ _scylla_yaml_out.stdout | from_yaml }}"
-
-        - set_fact:
-            _rbno_enabled: "{{ _scylla_yaml_map.enable_repair_based_node_ops is not defined or _scylla_yaml_map.enable_repair_based_node_ops }}"
-            _rbno_allowed_for_replace: "{{ _scylla_yaml_map.allowed_repair_based_node_ops is not defined or 'replace' in _scylla_yaml_map.allowed_repair_based_node_ops }}"
-      when: _enable_rbno_grep.failed == false
-
-    # RBNO will be re-enabled once the replace is finished
-    - name: Disable RBNO
-      lineinfile:
-        path: /etc/scylla/scylla.yaml
-        regexp: '^(#\s*)?enable_repair_based_node_ops:'
-        line: "enable_repair_based_node_ops: False"
-        create: yes
-      when: disable_rbno|bool and _rbno_enabled is defined and _rbno_enabled|bool
-
-    - name: Start Scylla
-      service:
-        name: scylla-server
-        state: started
-
-    - name: Wait for CQL port on {{ listen_address }}
-      wait_for:
-        port: "{{ cql_port }}"
-        host: "{{ listen_address }}"
-        timeout: "{{ new_node_bootstrap_wait_time_sec|int }}"
-
-    - name: Remove the replace_node_first_boot record
-      lineinfile:
-        path: /etc/scylla/scylla.yaml
-        regexp: '^replace_node_first_boot:'
-        state: absent
-      when: _replace_node_first_boot_grep.failed == false
-
-    - name: Remove the replace_address_first_boot record
-      lineinfile:
-        path: /etc/scylla/scylla.yaml
-        regexp: '^replace_address_first_boot:'
-        state: absent
-      when: _replace_node_first_boot_grep.failed
-
-    - name: Remove the ignore_dead_nodes_for_replace record
-      lineinfile:
-        path: /etc/scylla/scylla.yaml
-        regexp: '^ignore_dead_nodes_for_replace:'
-        state: absent
-      when: dead_nodes_to_ignore|length > 0
-
-    - name: Restore seeds list
-      lineinfile:
-        path: /etc/scylla/scylla.yaml
-        regexp: '^(\s+) - seeds:'
-        line: |
-          \g<1> - seeds: {{ original_seeds }}
-        backrefs: yes
-
-
-- name: Wait for added node to become healthy and run post-replace tasks
-  hosts: scylla
-  any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
-  tasks:
-    - name: Wait for the added node to become healthy
-      shell: |
-        nodetool status|grep -E '^UN'|grep -w "{{ hostvars[new_node]['broadcast_address'] }}"| wc -l
-      register: node_count
-      until: node_count.stdout|int == 1
-      retries: "{{ new_node_bootstrap_wait_time_sec|int }}"
-      delay: 1
-
-    - name: start and enable the Manager agent service
-      service:
-        name: scylla-manager-agent
-        state: restarted
-        enabled: yes
-      become: true
-      when: inventory_hostname == new_node
-
-    - name: Re-enable RBNO for the new node
-      block:
-        - name: Set RBNO to true in scylla.yaml
-          lineinfile:
-            path: /etc/scylla/scylla.yaml
-            regexp: '^(#\s*)?enable_repair_based_node_ops:'
-            line: "enable_repair_based_node_ops: True"
-            create: yes
-
-        - name: Re-load scylla.yaml
-          shell: |
-            pkill -1 scylla$
-      become: true
-      when: inventory_hostname == new_node and disable_rbno|bool and _rbno_enabled is defined and _rbno_enabled|bool
-
-
-# If 'nodetool status' is used as a source for the list of nodes, we need to update monitoring again once the node finishes bootstrapping
-- name: Update scylla-monitoring
-  hosts: scylla-monitor
-  any_errors_fatal: true
-  roles:
-    - role: ansible-scylla-monitoring
-      when: use_nodetool_status_with_genconfig is defined and use_nodetool_status_with_genconfig|bool
-
-
-- name: Resume scylla-manager tasks
-  hosts: scylla-manager
-  any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
-  tasks:
-    - name: Resume SM tasks on all configured clusters
-      shell: sctool --cluster="{{ item.cluster_name }}" resume
-      loop: "{{ scylla_clusters }}"
-
-
-# This play will repair the new node if RBNO was not used and skip_repair is not set to true
-- name: Repair the new node, if necessary
-  hosts: scylla-manager
-  any_errors_fatal: true
-  vars_files:
-    - vars/main.yml
-  tasks:
-    - name: Skip this play if RBNO was used for the replacement or if skip_repair is true
-      meta: end_play
-      when: skip_repair|bool or (disable_rbno|bool == false and hostvars[new_node]['_enable_rbno_grep'].failed == false and hostvars[new_node]['_rbno_enabled'] and hostvars[new_node]['_rbno_allowed_for_replace'])
-
-    - name: Get cluster id
-      shell: |
-        if sctool status -c "{{ item.cluster_name }}" | grep -w "{{ hostvars[new_node]['broadcast_address'] }}" > /dev/null; then echo "{{ item.cluster_name }}"; else echo ""; fi
-      loop: "{{ scylla_clusters }}"
-      register: _cluster_id
-
-    - name: Count non-empty stdout values in _cluster_id
-      set_fact:
-        cluster_with_new_node: "{{ _cluster_id.results | json_query('[?stdout != ``]') | json_query('[].stdout') }}"
-
-    - name: Check if the new node is managed by any Scylla Manager cluster
-      fail:
-        msg: "Unable to find Scylla Manager cluster managing {{ hostvars[new_node]['broadcast_address'] }} in scylla-manager"
-      when: cluster_with_new_node|length == 0
-
-    - name: Check if the new node is managed by exactly one Scylla Manager cluster
-      fail:
-        msg: "More than a single Scylla Manager cluster managing {{ hostvars[new_node]['broadcast_address'] }} in scylla-manager"
-      when: cluster_with_new_node|length > 1
-
-    # If we've got here, there is exactly one value in a {{ cluster_with_new_node }} list
-    - name: Repair the new node
-      shell: |
-        sctool repair --cluster "{{ cluster_with_new_node[0] }}" --host "{{ hostvars[new_node]['broadcast_address'] }}" {{ extra_repair_params }}
-      register: _repair_id
-
-    - name: Wait for the repair to finish
-      shell:
-        sctool progress "{{ _repair_id.stdout }}" --cluster "{{ cluster_with_new_node[0] }}" | grep "Status:" | awk '{print $2}'
-      register: _repair_status
-      until: _repair_status.stdout != "RUNNING"
-      retries: "{{ new_node_repair_timeout_seconds|int // 30 }}" # retries = new_node_repair_timeout_seconds / delay
-      delay: 30
-
-    - fail:
-        msg: "Repair failed!"
-      when: _repair_status.stdout != "DONE"
+#- name: Update scylla-monitoring
+#  hosts: scylla-monitor
+#  any_errors_fatal: true
+#  roles:
+#    - ansible-scylla-monitoring
+#
+#
+#- name: Temporarily suspend scylla-manager tasks
+#  hosts: scylla-manager
+#  any_errors_fatal: true
+#  vars_files:
+#    - vars/main.yml
+#  tasks:
+#    - name: Suspend SM tasks on all configured clusters
+#      shell: sctool --cluster="{{ item.cluster_name }}" suspend
+#      loop: "{{ scylla_clusters }}"
+#
+#
+## This play will set the ip/host_id of the replaced node in the scylla.yaml of the new node,
+## start the new node, and then wait until the new node finishes joining the cluster. The same
+## variables used when the node role was executed for the replaced node should also be passed
+## to this playbook and will be used by this play.
+#- name: Start Scylla in the new node
+#  hosts: "{{ new_node }}"
+#  any_errors_fatal: true
+#  vars_files:
+#    - vars/main.yml
+#  become: true
+#  tasks:
+#    - name: Get current seeds
+#      shell: |
+#        grep '\- seeds:' /etc/scylla/scylla.yaml | awk '{ print $NF }'
+#      register: _current_seeds
+#
+#    - name: Save current seeds list as a fact
+#      set_fact:
+#        original_seeds: "{{ _current_seeds.stdout }}"
+#
+#    - name: Set temporary_seed as seed for the new node
+#      lineinfile:
+#        path: /etc/scylla/scylla.yaml
+#        regexp: '^(\s+) - seeds:'
+#        line: |
+#          \g<1> - seeds: {{ hostvars[temporary_seed].broadcast_address }}
+#        backrefs: yes
+#
+#    - name: Check if replace_node_first_boot is available in the current Scylla version
+#      shell: |
+#        scylla --help | grep replace-node-first-boot
+#      register: _replace_node_first_boot_grep
+#      ignore_errors: true
+#
+#    - name: Get the host id for all nodes
+#      uri:
+#        url: "http://{{ scylla_api_address }}:{{ scylla_api_port }}/storage_service/host_id"
+#        method: GET
+#      register: _host_ids
+#      until: _host_ids.status == 200
+#      retries: 5
+#      delay: 1
+#      delegate_to: "{{ temporary_seed }}"
+#      run_once: true
+#
+#    - name: Set ignore_dead_nodes_for_replace using host ids
+#      block:
+#        - name: Set dead nodes host ids
+#          set_fact:
+#            _dead_nodes_host_ids: "{{ _dead_nodes_host_ids | default([]) + [item.value] }}"
+#          when: item.key in dead_nodes_to_ignore
+#          loop: "{{ _host_ids.json }}"
+#
+#        - name: Set ignore_dead_nodes_for_replace in scylla.yaml
+#          lineinfile:
+#            path: /etc/scylla/scylla.yaml
+#            regexp: '^(#\s*)?ignore_dead_nodes_for_replace:'
+#            line: "ignore_dead_nodes_for_replace: {{ _dead_nodes_host_ids | join(',')}}"
+#            create: yes
+#      when: dead_nodes_to_ignore|length > 0 and _replace_node_first_boot_grep.failed == false
+#
+#    # If the _replace_node_first_boot_grep failed, it means that in this scylla version we are still using
+#    # addresses instead of host ids for replace, so let's set broadcast addresses in ignore_dead_nodes_for_replace
+#    - name: Set ignore_dead_nodes_for_replace using addresses
+#      lineinfile:
+#        path: /etc/scylla/scylla.yaml
+#        regexp: '^(#\s*)?ignore_dead_nodes_for_replace:'
+#        line: "ignore_dead_nodes_for_replace: {{ dead_nodes_to_ignore | join(',')}}"
+#        create: yes
+#      when: dead_nodes_to_ignore|length > 0 and _replace_node_first_boot_grep.failed
+#
+#    - name: Set replace_node_first_boot
+#      block:
+#        - set_fact:
+#            _replaced_node_host_id: "{{ item.value }}"
+#          when: item.key == replaced_node or item.key == replaced_node_broadcast_address
+#          loop: "{{ _host_ids.json }}"
+#
+#        - name: Set replace_node_first_boot
+#          lineinfile:
+#            path: /etc/scylla/scylla.yaml
+#            regexp: '^(#\s*)?replace_node_first_boot:'
+#            line: "replace_node_first_boot: {{ _replaced_node_host_id }}"
+#            create: yes
+#      when: _replace_node_first_boot_grep.failed == false
+#
+#    - name: Set replace_address_first_boot
+#      lineinfile:
+#        path: /etc/scylla/scylla.yaml
+#        regexp: '^(#\s*)?replace_address_first_boot:'
+#        line: "replace_address_first_boot: {{ replaced_node_broadcast_address }}"
+#        create: yes
+#      when: _replace_node_first_boot_grep.failed
+#
+#    - name: Check if RBNO is available in the current Scylla version
+#      shell: |
+#        scylla --help | grep enable-repair-based-node-ops
+#      register: _enable_rbno_grep
+#      ignore_errors: true
+#
+#    - name: Check if RBNO was enabled for node replacement
+#      block:
+#        - command: cat /etc/scylla/scylla.yaml
+#          ignore_errors: true
+#          register: _scylla_yaml_out
+#
+#        - set_fact:
+#            _scylla_yaml_map: "{{ _scylla_yaml_out.stdout | from_yaml }}"
+#
+#        - set_fact:
+#            _rbno_enabled: "{{ _scylla_yaml_map.enable_repair_based_node_ops is not defined or _scylla_yaml_map.enable_repair_based_node_ops }}"
+#            _rbno_allowed_for_replace: "{{ _scylla_yaml_map.allowed_repair_based_node_ops is not defined or 'replace' in _scylla_yaml_map.allowed_repair_based_node_ops }}"
+#      when: _enable_rbno_grep.failed == false
+#
+#    # RBNO will be re-enabled once the replace is finished
+#    - name: Disable RBNO
+#      lineinfile:
+#        path: /etc/scylla/scylla.yaml
+#        regexp: '^(#\s*)?enable_repair_based_node_ops:'
+#        line: "enable_repair_based_node_ops: False"
+#        create: yes
+#      when: disable_rbno|bool and _rbno_enabled is defined and _rbno_enabled|bool
+#
+#    - name: Start Scylla
+#      service:
+#        name: scylla-server
+#        state: started
+#
+#    - name: Wait for CQL port on {{ listen_address }}
+#      wait_for:
+#        port: "{{ cql_port }}"
+#        host: "{{ listen_address }}"
+#        timeout: "{{ new_node_bootstrap_wait_time_sec|int }}"
+#
+#    - name: Remove the replace_node_first_boot record
+#      lineinfile:
+#        path: /etc/scylla/scylla.yaml
+#        regexp: '^replace_node_first_boot:'
+#        state: absent
+#      when: _replace_node_first_boot_grep.failed == false
+#
+#    - name: Remove the replace_address_first_boot record
+#      lineinfile:
+#        path: /etc/scylla/scylla.yaml
+#        regexp: '^replace_address_first_boot:'
+#        state: absent
+#      when: _replace_node_first_boot_grep.failed
+#
+#    - name: Remove the ignore_dead_nodes_for_replace record
+#      lineinfile:
+#        path: /etc/scylla/scylla.yaml
+#        regexp: '^ignore_dead_nodes_for_replace:'
+#        state: absent
+#      when: dead_nodes_to_ignore|length > 0
+#
+#    - name: Restore seeds list
+#      lineinfile:
+#        path: /etc/scylla/scylla.yaml
+#        regexp: '^(\s+) - seeds:'
+#        line: |
+#          \g<1> - seeds: {{ original_seeds }}
+#        backrefs: yes
+#
+#
+#- name: Wait for added node to become healthy and run post-replace tasks
+#  hosts: scylla
+#  any_errors_fatal: true
+#  vars_files:
+#    - vars/main.yml
+#  tasks:
+#    - name: Wait for the added node to become healthy
+#      shell: |
+#        nodetool status|grep -E '^UN'|grep -w "{{ hostvars[new_node]['broadcast_address'] }}"| wc -l
+#      register: node_count
+#      until: node_count.stdout|int == 1
+#      retries: "{{ new_node_bootstrap_wait_time_sec|int }}"
+#      delay: 1
+#
+#    - name: start and enable the Manager agent service
+#      service:
+#        name: scylla-manager-agent
+#        state: restarted
+#        enabled: yes
+#      become: true
+#      when: inventory_hostname == new_node
+#
+#    - name: Re-enable RBNO for the new node
+#      block:
+#        - name: Set RBNO to true in scylla.yaml
+#          lineinfile:
+#            path: /etc/scylla/scylla.yaml
+#            regexp: '^(#\s*)?enable_repair_based_node_ops:'
+#            line: "enable_repair_based_node_ops: True"
+#            create: yes
+#
+#        - name: Re-load scylla.yaml
+#          shell: |
+#            pkill -1 scylla$
+#      become: true
+#      when: inventory_hostname == new_node and disable_rbno|bool and _rbno_enabled is defined and _rbno_enabled|bool
+#
+#
+## If 'nodetool status' is used as a source for the list of nodes, we need to update monitoring again once the node finishes bootstrapping
+#- name: Update scylla-monitoring
+#  hosts: scylla-monitor
+#  any_errors_fatal: true
+#  roles:
+#    - role: ansible-scylla-monitoring
+#      when: use_nodetool_status_with_genconfig is defined and use_nodetool_status_with_genconfig|bool
+#
+#
+#- name: Resume scylla-manager tasks
+#  hosts: scylla-manager
+#  any_errors_fatal: true
+#  vars_files:
+#    - vars/main.yml
+#  tasks:
+#    - name: Resume SM tasks on all configured clusters
+#      shell: sctool --cluster="{{ item.cluster_name }}" resume
+#      loop: "{{ scylla_clusters }}"
+#
+#
+## This play will repair the new node if RBNO was not used and skip_repair is not set to true
+#- name: Repair the new node, if necessary
+#  hosts: scylla-manager
+#  any_errors_fatal: true
+#  vars_files:
+#    - vars/main.yml
+#  tasks:
+#    - name: Skip this play if RBNO was used for the replacement or if skip_repair is true
+#      meta: end_play
+#      when: skip_repair|bool or (disable_rbno|bool == false and hostvars[new_node]['_enable_rbno_grep'].failed == false and hostvars[new_node]['_rbno_enabled'] and hostvars[new_node]['_rbno_allowed_for_replace'])
+#
+#    - name: Get cluster id
+#      shell: |
+#        if sctool status -c "{{ item.cluster_name }}" | grep -w "{{ hostvars[new_node]['broadcast_address'] }}" > /dev/null; then echo "{{ item.cluster_name }}"; else echo ""; fi
+#      loop: "{{ scylla_clusters }}"
+#      register: _cluster_id
+#
+#    - name: Count non-empty stdout values in _cluster_id
+#      set_fact:
+#        cluster_with_new_node: "{{ _cluster_id.results | json_query('[?stdout != ``]') | json_query('[].stdout') }}"
+#
+#    - name: Check if the new node is managed by any Scylla Manager cluster
+#      fail:
+#        msg: "Unable to find Scylla Manager cluster managing {{ hostvars[new_node]['broadcast_address'] }} in scylla-manager"
+#      when: cluster_with_new_node|length == 0
+#
+#    - name: Check if the new node is managed by exactly one Scylla Manager cluster
+#      fail:
+#        msg: "More than a single Scylla Manager cluster managing {{ hostvars[new_node]['broadcast_address'] }} in scylla-manager"
+#      when: cluster_with_new_node|length > 1
+#
+#    # If we've got here, there is exactly one value in a {{ cluster_with_new_node }} list
+#    - name: Repair the new node
+#      shell: |
+#        sctool repair --cluster "{{ cluster_with_new_node[0] }}" --host "{{ hostvars[new_node]['broadcast_address'] }}" {{ extra_repair_params }}
+#      register: _repair_id
+#
+#    - name: Wait for the repair to finish
+#      shell:
+#        sctool progress "{{ _repair_id.stdout }}" --cluster "{{ cluster_with_new_node[0] }}" | grep "Status:" | awk '{print $2}'
+#      register: _repair_status
+#      until: _repair_status.stdout != "RUNNING"
+#      retries: "{{ new_node_repair_timeout_seconds|int // 30 }}" # retries = new_node_repair_timeout_seconds / delay
+#      delay: 30
+#
+#    - fail:
+#        msg: "Repair failed!"
+#      when: _repair_status.stdout != "DONE"
