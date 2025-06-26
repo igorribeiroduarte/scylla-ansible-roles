@@ -99,6 +99,10 @@
         msg: "Unable to generate scylla_servers.yml because all scylla nodes are down"
       when: nodetool_status_out is not defined
 
+    - name: Print output2
+      debug:
+        msg: "{{ nodetool_status_out }}"
+
     - shell: "{{ base_dir }}/genconfig.py -c {{ scylla_cluster_name }} -NS -o {{ scylla_monitoring_config_path }}/scylla_servers.yml"
       args:
         stdin: "{{ nodetool_status_out.stdout }}"

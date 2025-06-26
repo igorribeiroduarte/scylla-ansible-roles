@@ -11,3 +11,7 @@
   set_fact:
     nodetool_status_out: "{{ _nodetool_status_tmp }}"
   when: nodetool_status_out is not defined and _nodetool_status_tmp.rc == 0
+
+- name: Print output1
+  debug:
+    msg: "{{ nodetool_status_out }}"
