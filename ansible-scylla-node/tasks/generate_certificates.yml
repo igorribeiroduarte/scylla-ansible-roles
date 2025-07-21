@@ -1,0 +1,47 @@
+---
+
+- name: Check if local certificate already exists
+  stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ _localhost_cert_path }}"
+    - "{{ _localhost_cert_key_path }}"
+  register: _cert_and_key_local_files
+  delegate_to: localhost
+  run_once: true
+
+- name: Fail if a certificate exists in the localhost but a key doesn't or vice versa
+  fail:
+    msg: "A certificate already exists in the localhost but a key doesn't or vice versa"
+  when:
+    - _cert_and_key_local_files[0].stat.exists or _cert_and_key_local_files[1].stat.exists
+    - not (_cert_and_key_local_files[0].stat.exists and _cert_and_key_local_files[1].stat.exists)
+
+# FIXME: Remember to parametrize keyCertSign and to check basic_constraints_critical and basic_constraints
+- name: Generate a new certificate and key 
+  block:
+    - name: Generate an OpenSSL private key
+      openssl_privatekey:
+        path: "{{ _localhost_cert_key_path }}"
+
+    - name: Generate an OpenSSL Certificate Signing Request
+      community.crypto.openssl_csr_pipe:
+        privatekey_path: "{{ _localhost_cert_key_path }}"
+        common_name: "{{ _common_name }}"
+        use_common_name_for_san: false  # since we do not specify SANs, don't use CN as a SAN
+        basic_constraints: "{{ _basic_constraints }}"
+        basic_constraints_critical: yes
+        key_usage:
+          - keyCertSign
+        key_usage_critical: true
+      register: _csr
+
+    - name: Generate a Self Signed OpenSSL certificate
+      community.crypto.x509_certificate:
+        path: "{{ _localhost_cert_path }}"
+        privatekey_path: "{{ _localhost_cert_key_path }}"
+        csr_content: "{{ _csr.csr }}"
+        provider: selfsigned
+  when: not _cert_and_key_local_files[0].stat.exists and not _cert_and_key_local_files[0].stat.exists
+  delegate_to: localhost
+  run_once: true

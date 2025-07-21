@@ -91,6 +91,8 @@
   run_once: true
 
 - name: Generate keys signed by the local CA
+
+- name: Generate keys signed by the local CA
   block:
     - name: Create a directory for the crt
       file:
