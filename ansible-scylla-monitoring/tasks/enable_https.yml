@@ -15,15 +15,57 @@
     - _grafana_cert_and_key_remote_files.results[0].stat.exists or _grafana_cert_and_key_remote_files.results[1].stat.exists
     - not (_grafana_cert_and_key_remote_files.results[0].stat.exists and _grafana_cert_and_key_remote_files.results[1].stat.exists)
 
-# FIXME: Find a better way to include this task
-- name: Generate SSL certificate and key
-  include_tasks: "{{ role_path }}/../ansible-scylla-node/tasks/generate_certificates.yml"
-  vars:
-    - _localhost_cert_path: "{{ grafana_localhost_cert_path }}"
-    - _localhost_cert_key_path: "{{ grafana_localhost_cert_key_path }}"
-    - _cert_common_name: "{{ ansible_host | default(inventory_hostname) }}"
-    - _cert_basic_constraints: ['CA:FALSE']
-    - _cert_key_usage: ['digitalSignature', 'keyEncipherment']
+- name: Check if local certificate already exists
+  stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ grafana_localhost_cert_path }}"
+    - "{{ grafana_localhost_cert_key_path }}"
+  register: _grafana_cert_and_key_local_files
+  delegate_to: localhost
+
+- name: Fail if a certificate exists in the localhost but a key doesn't or vice versa
+  fail:
+    msg: "A certificate already exists in the localhost but a key doesn't or vice versa"
+  when:
+    - _grafana_cert_and_key_local_files.results[0].stat.exists or _grafana_cert_and_key_local_files.results[1].stat.exists
+    - not (_grafana_cert_and_key_local_files.results[0].stat.exists and _grafana_cert_and_key_local_files.results[1].stat.exists)
+
+- name: Generate a new certificate and key
+  block:
+    - name: Create cert dir
+      file:
+        path: "{{ grafana_localhost_cert_path | dirname }}"
+        state: directory
+
+    - name: Generate an OpenSSL private key
+      openssl_privatekey:
+        path: "{{ grafana_localhost_cert_key_path }}"
+
+    - name: Generate an OpenSSL Certificate Signing Request
+      community.crypto.openssl_csr_pipe:
+        privatekey_path: "{{ grafana_localhost_cert_key_path }}"
+        common_name: "{{ ansible_host | default(inventory_hostname) }}"
+        use_common_name_for_san: false
+        basic_constraints:
+          - "CA: FALSE"
+        basic_constraints_critical: yes
+        key_usage:
+          - digitalSignature
+          - keyEncipherment
+        key_usage_critical: true
+      register: _csr
+
+    - name: Generate a Self Signed OpenSSL certificate
+      community.crypto.x509_certificate:
+        path: "{{ grafana_localhost_cert_path }}"
+        privatekey_path: "{{ grafana_localhost_cert_key_path }}"
+        csr_content: "{{ _csr.csr }}"
+        provider: selfsigned
+  when:
+    - not _grafana_cert_and_key_local_files.results[0].stat.exists and not _grafana_cert_and_key_local_files.results[0].stat.exists
+    - not _grafana_cert_and_key_remote_files.results[0].stat.exists and not _grafana_cert_and_key_remote_files.results[1].stat.exists
+  delegate_to: localhost
 
 - name: Copy SSL certificate and key
   block:
@@ -45,8 +87,6 @@
     grafana_root_url: "https://localhost:3000"
   when: grafana_root_url is not defined
 
-# FIXME: Think about a way of changing the file permissions inside the docker container together with the -v
-#        A possible problem is the fact that the permissions outside will already be wrong
 - name: Update monitoring params
   set_fact:
     _scylla_monitoring_params: "{{ _scylla_monitoring_params }} -c GF_SERVER_PROTOCOL=https -D \" -v {{ grafana_cert_path }}:{{ grafana_cert_path }} -v {{ grafana_cert_key_path }}:{{ grafana_cert_key_path }}\" -c GF_SERVER_CERT_FILE=\"{{ grafana_cert_path }}\" -c GF_SERVER_CERT_KEY=\"{{ grafana_cert_key_path }}\""
