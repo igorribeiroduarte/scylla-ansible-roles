@@ -12,14 +12,18 @@
   fail:
     msg: "A certificate or a key already exist in the remote host"
   when:
-    - _grafana_cert_and_key_remote_files[0].stat.exists or _grafana_cert_and_key_remote_files[1].stat.exists
-    - not (_grafana_cert_and_key_remote_files[0].stat.exists and _grafana_cert_and_key_remote_files[1].stat.exists)
+    - _grafana_cert_and_key_remote_files.results[0].stat.exists or _grafana_cert_and_key_remote_files.results[1].stat.exists
+    - not (_grafana_cert_and_key_remote_files.results[0].stat.exists and _grafana_cert_and_key_remote_files.results[1].stat.exists)
 
+# FIXME: Find a better way to include this task
 - name: Generate SSL certificate and key
-  include_tasks: generate_certificates.yml
+  include_tasks: "{{ role_path }}/../ansible-scylla-node/tasks/generate_certificates.yml"
   vars:
-    - _localhost_cert_path: "{{ grafana_cert_path }}"
-    - _localhost_cert_key_path: "{{ grafana_cert_key_path }}"
+    - _localhost_cert_path: "{{ grafana_localhost_cert_path }}"
+    - _localhost_cert_key_path: "{{ grafana_localhost_cert_key_path }}"
+    - _cert_common_name: "{{ ansible_host | default(inventory_hostname) }}"
+    - _cert_basic_constraints: ['CA:FALSE']
+    - _cert_key_usage: ['digitalSignature', 'keyEncipherment']
 
 - name: Copy SSL certificate and key
   block:
@@ -33,8 +37,8 @@
       copy:
         src: "{{ grafana_localhost_cert_key_path }}"
         dest: "{{ grafana_cert_key_path }}"
-        mode: '0644'
-  when: not _grafana_cert_and_key_remote_files[0].stat.exists and not _grafana_cert_and_key_remote_files[1].stat.exists
+        mode: '0600'
+  when: not _grafana_cert_and_key_remote_files.results[0].stat.exists and not _grafana_cert_and_key_remote_files.results[1].stat.exists
 
 - name: Set grafana_root_url
   set_fact:
@@ -45,4 +49,4 @@
 #        A possible problem is the fact that the permissions outside will already be wrong
 - name: Update monitoring params
   set_fact:
-    _scylla_monitoring_params: "{{ _scylla_monitoring_params }} -c GF_SERVER_PROTOCOL=https -D \" -v {{ grafana_cert_path }} -v {{ grafana_cert_key_path }}\" -c GF_SERVER_CERT_FILE=\"{{ grafana_cert_path }}\" -c GF_SERVER_CERT_KEY=\"{{ grafana_cert_key_path }}\""
+    _scylla_monitoring_params: "{{ _scylla_monitoring_params }} -c GF_SERVER_PROTOCOL=https -D \" -v {{ grafana_cert_path }}:{{ grafana_cert_path }} -v {{ grafana_cert_key_path }}:{{ grafana_cert_key_path }}\" -c GF_SERVER_CERT_FILE=\"{{ grafana_cert_path }}\" -c GF_SERVER_CERT_KEY=\"{{ grafana_cert_key_path }}\""
