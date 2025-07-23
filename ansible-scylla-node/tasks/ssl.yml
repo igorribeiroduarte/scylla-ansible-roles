@@ -11,7 +11,7 @@
   set_fact:
     _cert_path: "{{ scylla_ssl.cert_path }}/{{ _localhost_cert_path | basename }}"
     _cert_key_path: "{{ scylla_ssl.cert_path }}/{{ _localhost_cert_key_path | basename }}"
-    _ca_path: "{{ scylla_ssl.cert_path }}/truststore.crt"
+    _truststore_path: "{{ scylla_ssl.cert_path }}/truststore.crt"
 
 - name: For every node, check if crt file exists
   stat:
@@ -67,14 +67,14 @@
   vars:
     - localhost_cert_path: "{{ _localhost_ca_path }}" 
     - localhost_cert_key_path: "{{ _localhost_ca_key_path }}"
-    - cert_path: "{{ _ca_path }}"
-    - cert_key_path: "{{ _ca_path }}" # Since we won't copy the CA key, let's set a dummy key path
+    - cert_path: "{{ _truststore_path }}"
+    - cert_key_path: "{{ _truststore_path }}" # Since we won't copy the CA key, let's set a dummy key path
     - cert_common_name: "{{ scylla_cluster_name }}.internal"
     - cert_basic_constraints: ['CA:TRUE']
     - cert_key_usage: ['keyCertSign']
+    - copy_crt_to_remote: false
     - copy_key_to_remote: false
-  when: _crt_and_key_exist == False and _ca_crt_and_key_exist == False
-  run_once: true
+  when: _crt_and_key_exist == False
 
 - name: Generate certificate signed by the local CA
   include_tasks: "{{ role_path }}/../shared-tasks/generate_certificate_and_key.yml"
@@ -90,6 +90,27 @@
     - ca_key_path: "{{ _localhost_ca_key_path }}"
     - copy_key_to_remote: true
   when: _crt_and_key_exist == False
+
+- name: Copy truststore to the nodes
+  block:
+    - name: Check if truststore already exists in the remote host
+      stat:
+        path: "{{ _truststore_path }}"
+      register: _truststore_file
+
+    - name: Copy truststore
+      copy:
+        src: "{{ scylla_ssl.localhost_truststore_path }}"
+        dest: "{{ scylla_ssl.cert_path }}/truststore.crt"
+        owner: scylla
+        group: scylla
+        mode: '0644'
+      become: true
+      when: not _truststore_file.stat.exists and scylla_ssl.localhost_truststore_path is defined
+
+    - name: Set _truststore_exists
+      set_fact:
+        _truststore_exists: "{{ _truststore_file.stat.exists or scylla_ssl.localhost_truststore_path is defined }}"
 
 - name: Generate cqlshrc
   template:

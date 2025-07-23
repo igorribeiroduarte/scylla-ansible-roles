@@ -288,7 +288,7 @@ scylla_yaml_params:
 scylla_ssl:
   localhost_cert_path: "{{ inventory_dir }}/ssl/scylla.crt"
   localhost_cert_key_path: "{{ inventory_dir }}/scylla.pem"
-  localhost_truststore_path: "{{ inventory_dir }}/ssl/scylla.crt"
+  localhost_truststore_path: "{{ inventory_dir }}/ssl/truststore.crt"
   localhost_ca_cert_path: "{{ inventory_dir }}/ssl/ca/"
   cert_path: /etc/scylla
   internode:
