@@ -81,8 +81,8 @@
       copy:
         src: "{{ localhost_cert_path }}"
         dest: "{{ cert_path }}"
-        owner: scylla
-        group: scylla
+        owner: root
+        group: root
         mode: '0644'
       become: true
 
@@ -90,9 +90,9 @@
       copy:
         src: "{{ localhost_cert_key_path }}"
         dest: "{{ cert_key_path }}"
-        owner: scylla
-        group: scylla
-        mode: '0600'
+        owner: root
+        group: root
+        mode: '0644'
       become: true
       when: copy_key_to_remote|bool
   when:
