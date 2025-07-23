@@ -65,26 +65,30 @@
 - name: If crt and keys were not provided for all nodes and no CA was provided, generate a self-signed CA
   include_tasks: "{{ role_path }}/../shared-tasks/generate_certificate_and_key.yml"
   vars:
-    - _localhost_cert_path: "{{ _localhost_ca_path }}" 
-    - _localhost_cert_key_path: "{{ _localhost_ca_key_path }}"
-    - _cert_common_name: "{{ scylla_cluster_name }}.internal"
-    - _cert_basic_constraints: ['CA:TRUE']
-    - _cert_key_usage: ['keyCertSign']
-    - _copy_key_to_remote: false
+    - localhost_cert_path: "{{ _localhost_ca_path }}" 
+    - localhost_cert_key_path: "{{ _localhost_ca_key_path }}"
+    - cert_path: "{{ _ca_path }}"
+    - cert_key_path: "{{ _ca_path }}" # Since we won't copy the CA key, let's set a dummy key path
+    - cert_common_name: "{{ scylla_cluster_name }}.internal"
+    - cert_basic_constraints: ['CA:TRUE']
+    - cert_key_usage: ['keyCertSign']
+    - copy_key_to_remote: false
   when: _crt_and_key_exist == False and _ca_crt_and_key_exist == False
   run_once: true
 
 - name: Generate certificate signed by the local CA
   include_tasks: "{{ role_path }}/../shared-tasks/generate_certificate_and_key.yml"
   vars:
-    - _localhost_cert_path: "{{ _localhost_cert_path }}"
-    - _localhost_cert_key_path: "{{ _localhost_cert_key_path }}"
-    - _cert_common_name: "{{ inventory_hostname }}.{{ scylla_cluster_name }}.internal"
-    - _cert_basic_constraints: ['CA:FALSE']
-    - _cert_key_usage: ['digitalSignature', 'keyEncipherment']
-    - _ca_path: "{{ _localhost_ca_path }}"
-    - _ca_key_path: "{{ _localhost_ca_key_path }}"
-    - _copy_key_to_remote: true
+    - localhost_cert_path: "{{ _localhost_cert_path }}"
+    - localhost_cert_key_path: "{{ _localhost_cert_key_path }}"
+    - cert_path: "{{ _cert_path }}"
+    - cert_key_path: "{{ _cert_key_path }}"
+    - cert_common_name: "{{ inventory_hostname }}.{{ scylla_cluster_name }}.internal"
+    - cert_basic_constraints: ['CA:FALSE']
+    - cert_key_usage: ['digitalSignature', 'keyEncipherment']
+    - ca_path: "{{ _localhost_ca_path }}"
+    - ca_key_path: "{{ _localhost_ca_key_path }}"
+    - copy_key_to_remote: true
   when: _crt_and_key_exist == False
 
 - name: Generate cqlshrc
