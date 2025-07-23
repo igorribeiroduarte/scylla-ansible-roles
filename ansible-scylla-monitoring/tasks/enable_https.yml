@@ -2,14 +2,14 @@
 - name:
   include_tasks: "{{ role_path }}/../shared-tasks/generate_certificate_and_key.yml"
   vars:
-    - _localhost_cert_path: "{{ grafana_localhost_cert_path }}"
-    - _localhost_cert_key_path: "{{ grafana_localhost_cert_key_path }}"
-    - _cert_path: "{{ grafana_cert_path }}"
-    - _cert_key_path: "{{ grafana_cert_key_path }}"
-    - _cert_common_name: "{{ ansible_host | default(inventory_hostname) }}"
-    - _cert_basic_constraints: ['CA:FALSE']
-    - _cert_key_usage: ['digitalSignature', 'keyEncipherment']
-    - _copy_key_to_remote: true
+    - localhost_cert_path: "{{ grafana_localhost_cert_path }}"
+    - localhost_cert_key_path: "{{ grafana_localhost_cert_key_path }}"
+    - cert_path: "{{ grafana_cert_path }}"
+    - cert_key_path: "{{ grafana_cert_key_path }}"
+    - cert_common_name: "{{ ansible_host | default(inventory_hostname) }}"
+    - cert_basic_constraints: ['CA:FALSE']
+    - cert_key_usage: ['digitalSignature', 'keyEncipherment']
+    - copy_key_to_remote: true
 
 - name: Set grafana_root_url
   set_fact:
