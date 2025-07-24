@@ -1,0 +1,119 @@
+---
+
+# This task facilitates the generation of SSL certificates.
+# It allows the generation of self-signed certificates or certificates signed with a provided CA.
+# The task will only generate certificates if they do not already exist at the specified localhost paths.
+# At the end the certificates will be copied from the localhost to their respective remote paths.
+#
+# Mandatory params:
+# - localhost_cert_path: The path in the localhost where the certificate should be generated/copied to the remote host
+# - localhost_cert_key_path: The path in the localhost to the certificate key that should be generated/copied to the remote host
+# - cert_path: The path to which the certificate should be copied in the remote host
+# - cert_key_path: The path to which the certificate key should be copied in the remote host
+# - cert_common_name: The common name that should be set in the certificate
+# - cert_basic_constraints: A list with the basic constraints that should be set in the certificate. e.g.: ["CA:TRUE"] -> https://www.rfc-editor.org/rfc/rfc5280#section-4.2.1.9
+# - cert_key_usage: A list with the key usages of the key in the certificate. e.g.: ['digitalSignature', 'keyEncipherment'] -> https://www.rfc-editor.org/rfc/rfc5280#section-4.2.1.3
+# - copy_crt_to_remote: A boolean indicating if the certificate should be copied to the remote host
+# - copy_key_to_remote: A boolean indicating if the key should be copied to the remote host
+
+# Optional params:
+# - ca_path: The path in the localhost to the CA certificate to use for signing the generated certificate. If not provided, the task will generate a self signed certificate.
+# - ca_key_path: The path in the localhost to the private key corresponding to the CA certificate. This field becomes mandatory if 'ca_path' is defined.
+
+- name: Check if remote certificate already exists
+  stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ cert_path }}"
+    - "{{ cert_key_path }}"
+  register: _cert_and_key_remote_files
+
+- name: Fail if a certificate exists in the remote host but a key doesn't or vice versa
+  fail:
+    msg: "A certificate already exists in the remote host but a key doesn't or vice versa"
+  when:
+    - _cert_and_key_remote_files.results[0].stat.exists or _cert_and_key_remote_files.results[1].stat.exists
+    - not (_cert_and_key_remote_files.results[0].stat.exists and _cert_and_key_remote_files.results[1].stat.exists)
+
+- name: Check if local certificate already exists
+  stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ localhost_cert_path }}"
+    - "{{ localhost_cert_key_path }}"
+  register: _cert_and_key_local_files
+  delegate_to: localhost
+
+- name: Fail if a certificate exists in the localhost but a key doesn't or vice versa
+  fail:
+    msg: "A certificate already exists in the localhost but a key doesn't or vice versa"
+  when:
+    - _cert_and_key_local_files.results[0].stat.exists or _cert_and_key_local_files.results[1].stat.exists
+    - not (_cert_and_key_local_files.results[0].stat.exists and _cert_and_key_local_files.results[1].stat.exists)
+
+- name: Generate a new certificate and key
+  block:
+    - name: Create cert dir
+      file:
+        path: "{{ localhost_cert_path | dirname }}"
+        state: directory
+
+    - name: Generate an OpenSSL private key
+      openssl_privatekey:
+        path: "{{ localhost_cert_key_path }}"
+
+    - name: Generate an OpenSSL Certificate Signing Request
+      community.crypto.openssl_csr_pipe:
+        privatekey_path: "{{ localhost_cert_key_path }}"
+        common_name: "{{ cert_common_name }}"
+        use_common_name_for_san: false
+        basic_constraints: "{{ cert_basic_constraints }}"
+        basic_constraints_critical: yes
+        key_usage: "{{ cert_key_usage }}"
+        key_usage_critical: true
+      register: _csr
+
+    - name: Generate a Self Signed OpenSSL certificate
+      community.crypto.x509_certificate:
+        path: "{{ localhost_cert_path }}"
+        privatekey_path: "{{ localhost_cert_key_path }}"
+        csr_content: "{{ _csr.csr }}"
+        provider: selfsigned
+      when: ca_path is not defined
+
+    - name: Generate a OpenSSL certificate signed by a local CA
+      community.crypto.x509_certificate:
+        path: "{{ localhost_cert_path }}"
+        privatekey_path: "{{ localhost_cert_key_path }}"
+        csr_content: "{{ _csr.csr }}"
+        ownca_path: "{{ ca_path }}"
+        ownca_privatekey_path: "{{ ca_key_path }}"
+        provider: ownca
+      when: ca_path is defined
+  when:
+    - not _cert_and_key_local_files.results[0].stat.exists and not _cert_and_key_local_files.results[0].stat.exists
+    - not _cert_and_key_remote_files.results[0].stat.exists and not _cert_and_key_remote_files.results[1].stat.exists
+  delegate_to: localhost
+
+- name: Copy SSL certificate and key
+  block:
+    - name: Copy SSL certificate
+      copy:
+        src: "{{ localhost_cert_path }}"
+        dest: "{{ cert_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+      become: true
+
+    - name: Copy SSL certificate key
+      copy:
+        src: "{{ localhost_cert_key_path }}"
+        dest: "{{ cert_key_path }}"
+        owner: root
+        group: root
+        mode: '0644'
+      become: true
+      when: copy_key_to_remote|bool
+  when:
+    - not _cert_and_key_remote_files.results[0].stat.exists and not _cert_and_key_remote_files.results[1].stat.exists
