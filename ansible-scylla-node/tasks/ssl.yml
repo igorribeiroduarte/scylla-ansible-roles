@@ -62,7 +62,7 @@
   run_once: true
   when: not _crt_and_key_exist and _some_crt_and_key_exist and not _ca_crt_and_key_exist
 
-- name: If crt and keys were not provided for all nodes and no CA was provided, generate a self-signed CA
+- name: If crt and keys were not provided, generate a self-signed CA
   include_tasks: "{{ role_path }}/../ansible-scylla-common/tasks/generate_certificate_and_key.yml"
   vars:
     - localhost_cert_path: "{{ _localhost_ca_path }}" 
