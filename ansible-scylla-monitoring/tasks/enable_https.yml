@@ -1,0 +1,21 @@
+---
+- name:
+  include_tasks: "{{ role_path }}/../ansible-scylla-common/tasks/generate_certificate_and_key.yml"
+  vars:
+    - localhost_cert_path: "{{ grafana_localhost_cert_path }}"
+    - localhost_cert_key_path: "{{ grafana_localhost_cert_key_path }}"
+    - cert_path: "{{ grafana_cert_path }}"
+    - cert_key_path: "{{ grafana_cert_key_path }}"
+    - cert_common_name: "{{ ansible_host | default(inventory_hostname) }}"
+    - cert_basic_constraints: ['CA:FALSE']
+    - cert_key_usage: ['digitalSignature', 'keyEncipherment']
+    - copy_key_to_remote: true
+
+- name: Set grafana_root_url
+  set_fact:
+    grafana_root_url: "https://localhost:3000"
+  when: grafana_root_url is not defined
+
+- name: Update monitoring params
+  set_fact:
+    _scylla_monitoring_params: "{{ _scylla_monitoring_params }} -c GF_SERVER_PROTOCOL=https -D \" -v {{ grafana_cert_path }}:{{ grafana_cert_path }} -v {{ grafana_cert_key_path }}:{{ grafana_cert_key_path }}\" -c GF_SERVER_CERT_FILE=\"{{ grafana_cert_path }}\" -c GF_SERVER_CERT_KEY=\"{{ grafana_cert_key_path }}\""
