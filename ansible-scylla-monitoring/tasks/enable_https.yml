@@ -1,6 +1,6 @@
 ---
 - name:
-  include_tasks: "{{ role_path }}/../shared-tasks/generate_certificate_and_key.yml"
+  include_tasks: "{{ role_path }}/../ansible-scylla-common/tasks/generate_certificate_and_key.yml"
   vars:
     - localhost_cert_path: "{{ grafana_localhost_cert_path }}"
     - localhost_cert_key_path: "{{ grafana_localhost_cert_key_path }}"
