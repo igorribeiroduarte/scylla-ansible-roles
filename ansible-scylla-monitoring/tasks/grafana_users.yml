@@ -9,7 +9,7 @@
   block:
   - name: "grafana_users.yml: Create new admin"
     community.grafana.grafana_user:
-      url: "http://localhost:3000"
+      url: "{{ grafana_root_url | default('http://localhost:3000') }}"
       url_username: "admin"
       url_password: "{{ grafana_admin_password }}"
       name: "{{ grafana_admin_user }}"
@@ -33,7 +33,7 @@
   block:
   - name: "grafana_users.yml: Drop viewer user"
     community.grafana.grafana_user:
-      url: "{{ grafana_root_url }}"
+      url: "{{ grafana_root_url | default('http://localhost:3000') }}"
       url_username: "{{ grafana_admin_user }}"
       url_password: "{{ grafana_admin_password }}"
       validate_certs: false
@@ -42,7 +42,7 @@
 
   - name: "grafana_users.yml: Create viewer user"
     community.grafana.grafana_user:
-      url: "{{ grafana_root_url }}"
+      url: "{{ grafana_root_url | default('http://localhost:3000') }}"
       url_username: "{{ grafana_admin_user }}"
       url_password: "{{ grafana_admin_password }}"
       validate_certs: false
