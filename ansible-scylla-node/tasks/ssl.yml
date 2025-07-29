@@ -63,21 +63,28 @@
   when: not _crt_and_key_exist and _some_crt_and_key_exist and not _ca_crt_and_key_exist
 
 - name: If crt and keys were not provided, generate a self-signed CA
-  include_tasks: "{{ role_path }}/../ansible-scylla-common/tasks/generate_certificate_and_key.yml"
-  vars:
-    - localhost_cert_path: "{{ _localhost_ca_path }}" 
-    - localhost_cert_key_path: "{{ _localhost_ca_key_path }}"
-    - cert_path: "{{ _truststore_path }}"
-    - cert_key_path: "{{ _truststore_path }}" # Since we won't copy the CA key, let's set a dummy key path
-    - cert_common_name: "{{ scylla_cluster_name }}.internal"
-    - cert_basic_constraints: ['CA:TRUE']
-    - cert_key_usage: ['keyCertSign']
-    - copy_crt_to_remote: false
-    - copy_key_to_remote: false
+  block:
+    - name: Generate a self-signed CA
+      import_tasks: "{{ role_path }}/../ansible-scylla-common/tasks/generate_certificate_and_key.yml"
+      vars:
+        - localhost_cert_path: "{{ _localhost_ca_path }}"
+        - localhost_cert_key_path: "{{ _localhost_ca_key_path }}"
+        - cert_path: "{{ _localhost_ca_path }}"
+        - cert_key_path: "{{ _localhost_ca_key_path }}"
+        - cert_common_name: "{{ scylla_cluster_name }}.internal"
+        - cert_basic_constraints: ['CA:TRUE']
+        - cert_key_usage: ['keyCertSign']
+        - copy_to_remote: false
+      delegate_to: localhost
+      run_once: true
+
+    - name: Set _crt_and_key_exist as true
+      set_fact:
+        _ca_crt_and_key_exist: True
   when: _crt_and_key_exist == False
 
-- name: Generate certificate signed by the local CA
-  include_tasks: "{{ role_path }}/../ansible-scylla-common/tasks/generate_certificate_and_key.yml"
+- name: Generate and copy certificates and keys
+  import_tasks: "{{ role_path }}/../ansible-scylla-common/tasks/generate_certificate_and_key.yml"
   vars:
     - localhost_cert_path: "{{ _localhost_cert_path }}"
     - localhost_cert_key_path: "{{ _localhost_cert_key_path }}"
@@ -88,8 +95,7 @@
     - cert_key_usage: ['digitalSignature', 'keyEncipherment']
     - ca_path: "{{ _localhost_ca_path }}"
     - ca_key_path: "{{ _localhost_ca_key_path }}"
-    - copy_key_to_remote: true
-  when: _crt_and_key_exist == False
+    - copy_to_remote: true
 
 - name: Copy truststore to the nodes
   block:
@@ -108,9 +114,22 @@
       become: true
       when: not _truststore_file.stat.exists and scylla_ssl.localhost_truststore_path is defined
 
+    - name: Copy CA as truststore
+      copy:
+        src: "{{ _localhost_ca_path }}"
+        dest: "{{ scylla_ssl.cert_path }}/truststore.crt"
+        owner: root
+        group: root
+        mode: '0644'
+      become: true
+      when:
+        - not _truststore_file.stat.exists
+        - not scylla_ssl.localhost_truststore_path is not defined
+        - _ca_crt_and_key_exist
+
     - name: Set _truststore_exists
       set_fact:
-        _truststore_exists: "{{ _truststore_file.stat.exists or scylla_ssl.localhost_truststore_path is defined }}"
+        _truststore_exists: "{{ _truststore_file.stat.exists or scylla_ssl.localhost_truststore_path is defined or _ca_crt_and_key_exist}}"
 
 - name: Generate cqlshrc
   template:
