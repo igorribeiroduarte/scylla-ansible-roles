@@ -328,6 +328,7 @@ ssl_cert_dir: "/etc/scylla"
 ssl_cert_path: "{{ (scylla_ssl | default({})).cert_path | default(ssl_cert_dir) }}/{{ ssl_localhost_cert_path | basename }}"
 ssl_cert_key_path: "{{ (scylla_ssl | default({})).cert_path | default(ssl_cert_dir) }}/{{ ssl_localhost_cert_key_path | basename }}"
 ssl_truststore_path: "{{ (scylla_ssl | default({})).cert_path | default (ssl_cert_dir) }}/truststore.crt"
+ssl_san: "{{ ['IP:' ~ ansible_host, 'DNS:' ~ inventory_hostname] if ansible_host is defined else ['DNS:' ~ inventory_hostname] }}"
 
 # Two types of encryption keys are available: System Keys and Table Keys.
 

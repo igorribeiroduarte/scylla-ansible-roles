@@ -42,6 +42,7 @@
     privatekey_path: "{{ cert_key_path }}"
     common_name: "{{ cert_common_name }}"
     use_common_name_for_san: false
+    subject_alt_name: "{{ cert_san }}"
     basic_constraints: "{{ cert_basic_constraints }}"
     basic_constraints_critical: yes
     key_usage: "{{ cert_key_usage }}"
