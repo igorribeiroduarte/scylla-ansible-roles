@@ -155,6 +155,18 @@
     - vars/main.yml
   become: true
   tasks:
+    - name: Check if scylla is already running in the new node
+      wait_for:
+        port: "{{ cql_port }}"
+        host: "{{ listen_address }}"
+        timeout: 15
+      register: wait_for_cql_port_output
+      ignore_errors: true
+
+    - name: Skip this play if scylla is already running
+      meta: end_play
+      when: not wait_for_cql_port_output.failed
+
     - name: Get current seeds
       shell: |
         grep '\- seeds:' /etc/scylla/scylla.yaml | awk '{ print $NF }'
