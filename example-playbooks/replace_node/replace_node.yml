@@ -130,6 +130,14 @@
         _scylla_running: "{{ ansible_facts.services['scylla-server.service'] is defined and ansible_facts.services['scylla-server.service']['state'] == 'running' }}"
       when: inventory_hostname == new_node
 
+    - name: Fail if scylla-server is up and the new node is not listed in host ids
+      fail:
+        msg: "Unexpected state: The new node is already running and it's not listed in the host ids"
+      when:
+        - inventory_hostname == new_node
+        - scylla_running
+        - broadcast_address not in _host_ids.json | map(attribute='key') | list
+
 
 # This play will install Scylla in the new node and update the existing ones.
 # The same variables used when the node role was executed for the replaced node should also
