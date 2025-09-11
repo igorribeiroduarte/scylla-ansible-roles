@@ -28,6 +28,6 @@ galaxy_info:
     - scylladb
     - scylla-node
     - cassandra
-dependencies:
-  - role: ansible-scylla-common
+#dependencies:
+#  - role: ansible-scylla-common
 
