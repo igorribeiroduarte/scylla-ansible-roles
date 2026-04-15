@@ -1,4 +1,8 @@
 ---
+- name: igor-testing
+  debug:
+    msg: "{{ repo_pattern_list }}"
+
 # Facts gathering
 - name: Populate service facts
   service_facts:
