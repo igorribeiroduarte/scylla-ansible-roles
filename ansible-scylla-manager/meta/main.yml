@@ -33,12 +33,12 @@ dependencies:
         - "scylla*"
       required_ports_open_to:
         scylla-monitor:
-          - address: "{{ ansible_host | default(ansible_default_ipv4.address) }}"
+          - address: "scylla-igor-test2-monitor-manager"
             port: 5090
         scylla-manager:
-          - address: "127.0.0.1"
+          - address: "localhost"
             port: 7000
-          - address: "127.0.0.1"
+          - address: "localhost"
             port: 9042
   - role: "ansible-scylla-node"
     vars:
